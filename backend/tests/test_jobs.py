@@ -151,11 +151,12 @@ def test_overview_matches_own_data(api, seeded):
     assert overview["total_jobs"] == 7
     assert overview["has_mock_data"] is True
     assert overview["has_active_cv"] is True
-    assert overview["sync_available"] is False
+    assert overview["sync_available"] is True
     providers = {item["provider"]: item for item in overview["integrations"]}
     assert providers["gmail"]["status"] == "disconnected"
-    assert providers["gmail"]["available"] is False
+    assert providers["gmail"]["available"] is True
     assert providers["gmail"]["account_count"] == 1
+    assert providers["telegram"]["available"] is False
 
 
 def test_sync_history_is_scoped_per_user(api, seeded):

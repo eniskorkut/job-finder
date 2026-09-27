@@ -20,6 +20,8 @@ os.environ["LOGIN_RATE_LIMIT_WINDOW_SECONDS"] = "900"
 os.environ["DEEPSEEK_API_KEY"] = ""
 
 import pytest  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -31,6 +33,11 @@ from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import *  # noqa: E402,F401,F403
+from app.models.enums import (  # noqa: E402
+    ErrorClass,
+    SyncJobAccountStatus,
+)
+from app.models.sync_job import SyncJobAccount  # noqa: E402
 from app.seed import DEFAULT_DEMO_PASSWORD, seed_demo_data  # noqa: E402
 from app.services.auth_service import login_limiter  # noqa: E402
 from app.services.user_service import UserService  # noqa: E402
@@ -189,3 +196,169 @@ def seeded(db):
     result = seed_demo_data(db)
     db.commit()
     return result
+
+
+# ----------------------------------------------------------------------
+# Phase 2 helpers: mailbox fixtures built on the fake provider client.
+# ----------------------------------------------------------------------
+def add_oauth_client(
+    db,
+    user,
+    provider: str = "gmail",
+    *,
+    client_id: str = "test-client-id.apps.googleusercontent.com",
+    client_secret: str = "test-client-secret",
+):
+    from app.services.oauth_service import OAuthClientService
+
+    config = OAuthClientService(db).save(
+        user,
+        provider,
+        client_id=client_id,
+        client_secret=client_secret,
+        tenant="consumers" if provider == "outlook" else None,
+    )
+    db.commit()
+    return config
+
+
+def add_mail_account(
+    db,
+    user,
+    provider: str = "gmail",
+    *,
+    email_address: str = "ai.hunter.gmail@example.com",
+    status: str = "connected",
+    filters: dict | None = None,
+):
+    from app.core.crypto import encrypt_secret
+    from app.models.enums import CursorKind
+    from app.models.mail_account import MailAccount
+    from app.repositories.sync_jobs import CheckpointRepository
+
+    account = MailAccount(
+        user_id=user.id,
+        provider=provider,
+        email_address=email_address,
+        display_name="Test Hesabı",
+        status=status,
+        provider_account_id=f"{provider}-account-1",
+        access_token_encrypted=encrypt_secret("access-token-1"),
+        refresh_token_encrypted=(
+            encrypt_secret("refresh-token-1") if provider == "gmail" else None
+        ),
+        token_cache_encrypted=(
+            encrypt_secret("msal-cache-1") if provider == "outlook" else None
+        ),
+        scopes=[],
+        filters=filters or {},
+    )
+    db.add(account)
+    db.flush()
+    CheckpointRepository(db).get_or_create(user.id, account.id)
+    db.commit()
+    return account
+
+
+@pytest.fixture
+def mailbox(db, user1):
+    """A connected Gmail account whose OAuth app belongs to user1."""
+
+    def _factory(
+        provider: str = "gmail",
+        *,
+        email_address: str | None = None,
+        user=None,
+        filters: dict | None = None,
+    ):
+        owner = user or user1
+        add_oauth_client(db, owner, provider)
+        return add_mail_account(
+            db,
+            owner,
+            provider,
+            email_address=email_address
+            or ("alerts@gmail.example.com" if provider == "gmail" else "alerts@outlook.example.com"),
+            filters=filters,
+        )
+
+    return _factory
+
+
+@pytest.fixture
+def fake_providers():
+    """Build fake provider clients and the factory that returns them."""
+    from tests.fakes import FakeClientFactory, FakeMailProviderClient, FakeProviderState
+
+    def _factory(**clients):
+        built: dict[str, FakeMailProviderClient] = {}
+        for provider, state in clients.items():
+            built[provider] = FakeMailProviderClient(provider=provider, state=state)
+        return FakeClientFactory(built), built
+
+    return _factory
+
+
+@dataclass
+class ScanResult:
+    """Per-mailbox result of a scan run (mirrors SyncJobAccount)."""
+
+    status: object
+    messages_scanned: int
+    jobs_found: int
+    jobs_new: int
+    jobs_duplicate: int
+    messages_skipped: int
+    error_message: str | None
+    error_class: object
+
+
+def run_scan(db, user, account, factory, *, job_id=None, now=None):
+    """Run one mailbox scan through the real runner (no worker process)."""
+    import asyncio
+    import uuid
+    from datetime import timedelta
+
+    from app.models.enums import SyncJobStatus
+    from app.models.sync_job import SyncJob
+    from app.repositories.sync_jobs import SyncJobAccountRepository
+    from app.services.sync_job_service import SyncRunner
+    from tests.fixtures.emails import RECEIVED_AT
+
+    job = SyncJob(
+        id=job_id or uuid.uuid4(),
+        user_id=user.id,
+        status=SyncJobStatus.QUEUED.value,
+        accounts_total=1,
+    )
+    db.add(job)
+    db.flush()
+    SyncJobAccountRepository(db).ensure_accounts(job, [account.id])
+    db.commit()
+
+    runner = SyncRunner(
+        worker_id="test-runner",
+        client_factory=factory,
+        # Deterministic clock so the first-scan window is stable.
+        now=now or (RECEIVED_AT + timedelta(days=1)),
+    )
+    asyncio.run(runner.execute(job.id))
+
+    db.expire_all()
+    row = (
+        db.query(SyncJobAccount)
+        .filter(SyncJobAccount.sync_job_id == job.id, SyncJobAccount.mail_account_id == account.id)
+        .one()
+    )
+    outcome = ScanResult(
+        status=SyncJobAccountStatus(row.status),
+        messages_scanned=row.messages_scanned,
+        jobs_found=row.jobs_found,
+        jobs_new=row.jobs_new,
+        jobs_duplicate=row.jobs_duplicate,
+        messages_skipped=row.messages_skipped,
+        error_message=row.error_message,
+        error_class=ErrorClass(row.error_class),
+    )
+    return job, outcome
+

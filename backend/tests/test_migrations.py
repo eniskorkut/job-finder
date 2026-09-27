@@ -20,6 +20,13 @@ EXPECTED_TABLES = {
     "sessions",
     "invitations",
     "alembic_version",
+    # phase 2
+    "oauth_client_configs",
+    "sync_jobs",
+    "sync_job_accounts",
+    "sync_checkpoints",
+    "processed_messages",
+    "job_sources",
 }
 
 

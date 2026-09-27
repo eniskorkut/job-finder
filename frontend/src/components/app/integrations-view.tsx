@@ -1,33 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Bot,
-  Cable,
-  CircleDot,
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  KeyRound,
   Mail,
   Plug,
+  RefreshCw,
+  Save,
   Send,
   ServerCog,
+  ShieldCheck,
   Trash2,
+  Unplug,
 } from "lucide-react";
 
 import { ErrorState } from "@/components/app/error-state";
+import { TransientAlert } from "@/components/app/transient-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field, Input, Select } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { connectionStatusLabels, formatDateTime } from "@/lib/format";
+import { connectionStatusLabels, formatDateTime, formatRelative } from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
-import type { Integration, IntegrationsResponse } from "@/lib/types";
+import type {
+  AccountTestResponse,
+  ConnectResponse,
+  Integration,
+  IntegrationsResponse,
+  MailAccount,
+  OAuthClientConfig,
+} from "@/lib/types";
 
-const providerIcons = {
-  gmail: Mail,
-  outlook: Mail,
-  telegram: Send,
-} as const;
+const providerLabels: Record<string, string> = {
+  gmail: "Gmail",
+  outlook: "Hotmail / Outlook",
+  telegram: "Telegram",
+};
 
 const statusTones: Record<string, "success" | "warning" | "danger" | "neutral"> = {
   connected: "success",
@@ -37,37 +53,71 @@ const statusTones: Record<string, "success" | "warning" | "danger" | "neutral"> 
   disconnected: "neutral",
 };
 
+type Feedback = { tone: "success" | "warning" | "danger"; message: string };
+
 export function IntegrationsView() {
   const integrations = useApiQuery<IntegrationsResponse>("/api/v1/integrations");
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingProvider, setPendingProvider] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
 
-  async function connect(provider: string) {
-    setPendingProvider(provider);
-    setActionError(null);
-    try {
-      await api.post(`/api/v1/integrations/${provider}/connect`);
-      // Unreachable in phase 1: the API answers 501.
-    } catch (error) {
-      setActionError(
-        error instanceof ApiError
-          ? `${error.message}${error.isNotImplemented ? " Aşama 2/3 tamamlanınca buradan bağlanabileceksiniz." : ""}`
-          : "Bağlantı başlatılamadı.",
-      );
-    } finally {
-      setPendingProvider(null);
+  // OAuth callbacks land here with ?oauth=success|error&reason=...
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("oauth");
+    if (!oauth) return;
+    const reason = params.get("reason") ?? "";
+    const detail = params.get("detail") ?? "";
+    const account = params.get("account") ?? "";
+    const provider = params.get("provider") ?? "";
+
+    if (oauth === "success") {
+      setFeedback({
+        tone: "success",
+        message: `${providerLabels[provider] ?? provider} hesabı bağlandı: ${account}`,
+      });
+    } else {
+      const explanations: Record<string, string> = {
+        state_missing: "Yetkilendirme yanıtı eksik geldi; akışı yeniden başlatın.",
+        session_missing: "Oturum bulunamadı; yeniden giriş yapıp tekrar deneyin.",
+        forbidden: "Bu yetkilendirme başka bir oturuma ait; akışı yeniden başlatın.",
+        validation_error: "Sağlayıcı isteği reddetti.",
+        provider_error: "Sağlayıcı beklenmeyen bir hata döndürdü.",
+      };
+      setFeedback({
+        tone: "danger",
+        message:
+          detail ||
+          explanations[reason] ||
+          "Bağlantı tamamlanamadı. Ayrıntı için sunucu günlüğüne bakın.",
+      });
     }
-  }
 
-  async function removeAccount(provider: string, accountId: string) {
-    setActionError(null);
+    const url = new URL(window.location.href);
+    ["oauth", "reason", "detail", "account", "created", "provider"].forEach((key) =>
+      url.searchParams.delete(key),
+    );
+    window.history.replaceState({}, "", url.toString());
+    integrations.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function connect(provider: string, accountId?: string) {
+    setBusyProvider(provider);
+    setFeedback(null);
     try {
-      await api.delete(`/api/v1/integrations/${provider}/accounts/${accountId}`);
-      integrations.refetch();
-    } catch (error) {
-      setActionError(
-        error instanceof ApiError ? error.message : "Kayıt kaldırılamadı.",
-      );
+      const path = accountId
+        ? `/api/v1/integrations/accounts/${accountId}/reconnect`
+        : `/api/v1/integrations/${provider}/connect`;
+      const response = await api.post<ConnectResponse>(path);
+      // Full page navigation: the provider needs the real redirect flow.
+      window.location.assign(response.authorization_url);
+    } catch (reason) {
+      setFeedback({
+        tone: reason instanceof ApiError && reason.isNotImplemented ? "warning" : "danger",
+        message:
+          reason instanceof ApiError ? reason.message : "Bağlantı başlatılamadı.",
+      });
+      setBusyProvider(null);
     }
   }
 
@@ -90,99 +140,86 @@ export function IntegrationsView() {
   if (integrations.error) {
     return (
       <Card>
-        <ErrorState
-          error={integrations.error}
-          onRetry={integrations.refetch}
-        />
+        <ErrorState error={integrations.error} onRetry={integrations.refetch} />
       </Card>
     );
   }
 
   if (!integrations.data) return null;
   const { integrations: items, deepseek } = integrations.data;
+  const mailProviders = items.filter((item) => item.category === "mail");
+  const telegram = items.find((item) => item.provider === "telegram");
 
   return (
     <div className="flex flex-col gap-5">
-      {actionError ? (
-        <div
-          role="alert"
-          className="flex items-start gap-2.5 rounded-[var(--radius-card)] bg-warning-soft px-3.5 py-3 text-[13px] leading-5 text-warning"
-        >
-          <Cable aria-hidden className="mt-0.5 size-4 shrink-0" strokeWidth={2} />
-          <p>{actionError}</p>
-        </div>
+      {feedback ? (
+        <TransientAlert tone={feedback.tone} title="Bağlantı durumu" duration={8000}>
+          {feedback.message}
+        </TransientAlert>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {items.map((integration) => (
-          <IntegrationCard
+        {mailProviders.map((integration) => (
+          <MailProviderCard
             key={integration.provider}
             integration={integration}
-            pending={pendingProvider === integration.provider}
-            onConnect={() => connect(integration.provider)}
-            onRemoveAccount={(accountId) =>
-              removeAccount(integration.provider, accountId)
-            }
+            busy={busyProvider === integration.provider}
+            onConnect={(accountId) => connect(integration.provider, accountId)}
+            onFeedback={setFeedback}
+            onRefresh={integrations.refetch}
           />
         ))}
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle className="flex items-center gap-2">
-                <ServerCog aria-hidden className="size-4" strokeWidth={1.75} />
-                DeepSeek (ortak)
-              </CardTitle>
-              <Badge variant={deepseek.configured ? "warning" : "neutral"}>
-                3. aşama
-              </Badge>
-            </div>
-            <CardDescription>{deepseek.note}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[12.5px]">
-              <dt className="text-ink-subtle">Model</dt>
-              <dd className="font-medium text-ink">{deepseek.model}</dd>
-              <dt className="text-ink-subtle">Base URL</dt>
-              <dd className="truncate font-mono text-[12px] text-ink">
-                {deepseek.base_url}
-              </dd>
-              <dt className="text-ink-subtle">API anahtarı</dt>
-              <dd className="font-medium text-ink">
-                {deepseek.configured ? "tanımlı" : "tanımlı değil"}
-              </dd>
-              <dt className="text-ink-subtle">Kullanım</dt>
-              <dd className="font-medium text-ink">
-                Tüm kullanıcılar için ortak
-              </dd>
-            </dl>
-            <p className="text-[12px] leading-4 text-ink-subtle">
-              Anahtarı backend/.env.local içine DEEPSEEK_API_KEY olarak ekleyin.
-              Skorlama 3. aşamada açılacak; şu an hiçbir dış istek yapılmıyor.
-            </p>
-          </CardContent>
-        </Card>
+        {telegram ? <TelegramCard integration={telegram} /> : null}
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <ServerCog aria-hidden className="size-4" strokeWidth={1.75} />
+              DeepSeek (ortak)
+            </CardTitle>
+            <Badge variant={deepseek.configured ? "success" : "neutral"}>
+              {deepseek.configured ? "yapılandırıldı" : "yapılandırılmadı"}
+            </Badge>
+          </div>
+          <CardDescription>{deepseek.note}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-[12.5px]">
+          <Row label="Model" value={deepseek.model} />
+          <Row label="Base URL" value={deepseek.base_url} mono />
+          <Row label="Kullanım" value="Tüm kullanıcılar için ortak (sunucu anahtarı)" />
+          <p className="text-[11.5px] leading-4 text-ink-subtle">
+            Anahtar yalnızca backend/.env.local içinde tutulur; panelden
+            girilmez ve hiçbir zaman tarayıcıya gönderilmez.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function IntegrationCard({
+// ----------------------------------------------------------------------
+function MailProviderCard({
   integration,
-  pending,
+  busy,
   onConnect,
-  onRemoveAccount,
+  onFeedback,
+  onRefresh,
 }: {
   integration: Integration;
-  pending: boolean;
-  onConnect: () => void;
-  onRemoveAccount: (accountId: string) => void;
+  busy: boolean;
+  onConnect: (accountId?: string) => void;
+  onFeedback: (feedback: Feedback | null) => void;
+  onRefresh: () => void;
 }) {
-  const Icon = providerIcons[integration.provider] ?? CircleDot;
-  const tone = statusTones[integration.status] ?? "neutral";
+  const config = integration.oauth_client;
+  const [editing, setEditing] = useState(false);
+  const Icon = Mail;
 
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col" data-testid={`integration-card-${integration.provider}`}>
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
@@ -190,91 +227,514 @@ function IntegrationCard({
             {integration.label}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge variant={tone}>
+            <Badge variant={statusTones[integration.status] ?? "neutral"}>
               {connectionStatusLabels[integration.status] ?? integration.status}
             </Badge>
-            <Badge variant="muted">
-              {integration.phase === "phase-2" ? "2. aşama" : "3. aşama"}
-            </Badge>
+            {config?.configured ? (
+              <Badge variant="success">istemci kayıtlı</Badge>
+            ) : (
+              <Badge variant="warning">istemci bekliyor</Badge>
+            )}
           </div>
         </div>
         <CardDescription>{integration.description}</CardDescription>
       </CardHeader>
 
-      <CardContent className="flex flex-1 flex-col gap-3">
-        {integration.accounts.length > 0 ? (
+      <CardContent className="flex flex-1 flex-col gap-4">
+        {config ? (
+          <SetupPanel
+            config={config}
+            editing={editing || !config.configured}
+            onEditingChange={setEditing}
+            onSaved={() => {
+              setEditing(false);
+              onFeedback({
+                tone: "success",
+                message: `${integration.label} istemci bilgileri kaydedildi.`,
+              });
+              onRefresh();
+            }}
+            onDeleted={() => {
+              onFeedback({
+                tone: "warning",
+                message: `${integration.label} istemci bilgileri silindi; hesaplar yeniden yetkilendirme bekliyor.`,
+              });
+              onRefresh();
+            }}
+            onError={(message) => onFeedback({ tone: "danger", message })}
+          />
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            loading={busy}
+            disabled={!config?.configured}
+            onClick={() => onConnect()}
+          >
+            <Plug aria-hidden className="size-3.5" strokeWidth={2} />
+            <span>{integration.label} ile bağlan</span>
+          </Button>
+          <span className="text-[11.5px] leading-4 text-ink-subtle">
+            {config?.configured
+              ? `${integration.label} hesabınızı yetkilendirin (parola istenmez).`
+              : "Önce istemci bilgilerini kaydedin."}
+          </span>
+        </div>
+
+        {integration.accounts.length ? (
           <ul className="flex flex-col gap-2">
             {integration.accounts.map((account) => (
-              <li
+              <AccountRow
                 key={account.id}
-                className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-surface-muted px-3 py-2.5"
-              >
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-[12.5px] font-medium text-ink">
-                    {account.email_address}
-                  </span>
-                  <span className="text-[11.5px] text-ink-subtle">
-                    {account.display_name ?? "hesap"} ·{" "}
-                    {connectionStatusLabels[account.status] ?? account.status}
-                    {account.last_synced_at
-                      ? ` · son tarama ${formatDateTime(account.last_synced_at)}`
-                      : " · hiç taranmadı"}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`${account.email_address} kaydını kaldır`}
-                  title="Kaydı kaldır"
-                  className="text-ink-muted pointer-hover:text-danger"
-                  onClick={() => onRemoveAccount(account.id)}
-                >
-                  <Trash2 aria-hidden className="size-4" strokeWidth={1.5} />
-                </Button>
-              </li>
+                account={account}
+                onConnect={() => onConnect(account.id)}
+                onFeedback={onFeedback}
+                onRefresh={onRefresh}
+              />
             ))}
           </ul>
         ) : (
-          <p className="text-[12.5px] text-ink-subtle">
-            Bu sağlayıcı için tanımlı hesap yok.{" "}
-            {integration.provider === "gmail"
-              ? "Gmail"
-              : integration.provider === "outlook"
-                ? "Hotmail/Outlook"
-                : "Telegram"}{" "}
-            hesabınızı 2. ve 3. aşamada bağlayabileceksiniz.
-          </p>
+          <EmptyState
+            icon={Mail}
+            title="Bağlı hesap yok"
+            description="İstemci bilgilerini kaydedip bağlanın. Aynı uygulamayla birden fazla posta kutusu ekleyebilirsiniz."
+            className="py-6"
+          />
         )}
-
-        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={pending}
-            onClick={onConnect}
-            className={cn(!integration.available && "opacity-80")}
-          >
-            <Plug aria-hidden className="size-3.5" strokeWidth={2} />
-            {integration.provider === "telegram" ? "Bağla" : "Bağlan"}
-          </Button>
-          {integration.unavailable_reason ? (
-            <span className="text-[11.5px] leading-4 text-ink-subtle">
-              {integration.unavailable_reason}
-            </span>
-          ) : null}
-        </div>
       </CardContent>
     </Card>
   );
 }
 
-export function IntegrationsEmptyState() {
+function SetupPanel({
+  config,
+  editing,
+  onEditingChange,
+  onSaved,
+  onDeleted,
+  onError,
+}: {
+  config: OAuthClientConfig;
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+  onError: (message: string) => void;
+}) {
+  const [showGuide, setShowGuide] = useState(!config.configured);
+  const [clientId, setClientId] = useState(config.client_id ?? "");
+  const [clientSecret, setClientSecret] = useState("");
+  const [tenant, setTenant] = useState(config.tenant ?? "consumers");
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.put(`/api/v1/integrations/${config.provider}/client`, {
+        client_id: clientId,
+        client_secret: clientSecret || undefined,
+        tenant: config.provider === "outlook" ? tenant : undefined,
+      });
+      setClientSecret("");
+      onSaved();
+    } catch (reason) {
+      onError(reason instanceof ApiError ? reason.message : "Kaydedilemedi.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    try {
+      await api.delete(`/api/v1/integrations/${config.provider}/client`);
+      setClientId("");
+      setClientSecret("");
+      onDeleted();
+    } catch (reason) {
+      onError(reason instanceof ApiError ? reason.message : "Silinemedi.");
+    }
+  }
+
+  async function copyRedirect() {
+    try {
+      await navigator.clipboard.writeText(config.redirect_uri);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      onError("Adres panoya kopyalanamadı.");
+    }
+  }
+
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 py-6 text-[13px] text-ink-muted">
-        <Bot aria-hidden className="size-4" strokeWidth={1.75} />
-        Henüz entegrasyon tanımı yok.
+    <div className="flex flex-col gap-3 rounded-[var(--radius-card)] bg-surface-muted p-3.5">
+      <button
+        type="button"
+        onClick={() => setShowGuide((value) => !value)}
+        className="flex items-center justify-between gap-2 text-left"
+        aria-expanded={showGuide}
+      >
+        <span className="flex items-center gap-2 text-[12.5px] font-medium text-ink">
+          <ShieldCheck aria-hidden className="size-3.5" strokeWidth={2} />
+          {config.title}
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            "size-4 text-ink-subtle transition-[rotate] duration-150 ease-out",
+            showGuide && "rotate-180",
+          )}
+          strokeWidth={2}
+        />
+      </button>
+
+      {showGuide ? (
+        <div className="flex flex-col gap-2 text-[12px] leading-5 text-ink-muted">
+          <ol className="flex list-decimal flex-col gap-1 ps-4">
+            {config.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="rounded bg-surface px-2 py-1 font-mono text-[11px] text-ink">
+              {config.redirect_uri}
+            </code>
+            <Button variant="ghost" size="sm" onClick={copyRedirect}>
+              {copied ? (
+                <Check aria-hidden className="size-3.5" strokeWidth={2} />
+              ) : (
+                <Copy aria-hidden className="size-3.5" strokeWidth={2} />
+              )}
+              {copied ? "Kopyalandı" : "Kopyala"}
+            </Button>
+          </div>
+          <p className="text-[11.5px] text-ink-subtle">
+            İzinler: {config.scopes.join(", ")}
+          </p>
+          {config.notes.map((note) => (
+            <p key={note} className="text-[11.5px] text-ink-subtle">
+              {note}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {editing ? (
+        <div className="flex flex-col gap-3">
+          <Field label="Client ID" htmlFor={`client-id-${config.provider}`}>
+            <Input
+              id={`client-id-${config.provider}`}
+              value={clientId}
+              onChange={(event) => setClientId(event.target.value)}
+              placeholder="00000000-0000-0000-0000-000000000000"
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            label={config.configured ? "Yeni Client Secret (boş = değişmez)" : "Client Secret"}
+            hint="Sunucuda APP_ENCRYPTION_KEY ile şifrelenir; tekrar düz metin gösterilmez."
+            htmlFor={`client-secret-${config.provider}`}
+          >
+            <Input
+              id={`client-secret-${config.provider}`}
+              type="password"
+              value={clientSecret}
+              onChange={(event) => setClientSecret(event.target.value)}
+              placeholder={config.configured ? "•••• (kayıtlı)" : "Client secret"}
+              autoComplete="new-password"
+            />
+          </Field>
+          {config.provider === "outlook" ? (
+            <Field
+              label="Kiracı (tenant)"
+              hint="Kişisel Hotmail/Outlook hesapları için consumers."
+              htmlFor="tenant"
+            >
+              <Select
+                id="tenant"
+                value={tenant}
+                onChange={(event) => setTenant(event.target.value)}
+              >
+                <option value="consumers">consumers (kişisel hesaplar)</option>
+                <option value="common">common (kişisel + kurumsal)</option>
+                <option value="organizations">organizations (yalnızca kurumsal)</option>
+              </Select>
+            </Field>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              loading={saving}
+              disabled={!clientId || (!config.configured && !clientSecret)}
+              onClick={save}
+            >
+              <Save aria-hidden className="size-3.5" strokeWidth={2} />
+              Kaydet
+            </Button>
+            {config.configured ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onEditingChange(false);
+                  setClientSecret("");
+                }}
+              >
+                Vazgeç
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Row label="Client ID" value={config.client_id ?? "—"} mono />
+          <Row label="Client Secret" value={config.client_secret_hint ?? "—"} mono />
+          {config.provider === "outlook" ? (
+            <Row label="Kiracı" value={config.tenant ?? "consumers"} />
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => onEditingChange(true)}>
+              <KeyRound aria-hidden className="size-3.5" strokeWidth={2} />
+              Güncelle
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-ink-muted pointer-hover:text-danger"
+              onClick={remove}
+            >
+              <Trash2 aria-hidden className="size-3.5" strokeWidth={1.5} />
+              Bilgileri sil
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountRow({
+  account,
+  onConnect,
+  onFeedback,
+  onRefresh,
+}: {
+  account: MailAccount;
+  onConnect: () => void;
+  onFeedback: (feedback: Feedback | null) => void;
+  onRefresh: () => void;
+}) {
+  const [senders, setSenders] = useState((account.filters.senders ?? []).join(", "));
+  const [subjects, setSubjects] = useState((account.filters.subjects ?? []).join(", "));
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  async function saveFilters() {
+    setSaving(true);
+    try {
+      await api.patch(`/api/v1/integrations/accounts/${account.id}`, {
+        senders: senders.split(",").map((item) => item.trim()).filter(Boolean),
+        subjects: subjects.split(",").map((item) => item.trim()).filter(Boolean),
+      });
+      onFeedback({ tone: "success", message: "Posta filtreleri güncellendi." });
+      onRefresh();
+    } catch (reason) {
+      onFeedback({
+        tone: "danger",
+        message: reason instanceof ApiError ? reason.message : "Filtreler kaydedilemedi.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function test() {
+    setTesting(true);
+    try {
+      const result = await api.post<AccountTestResponse>(
+        `/api/v1/integrations/accounts/${account.id}/test`,
+      );
+      onFeedback({ tone: result.ok ? "success" : "danger", message: result.message });
+      onRefresh();
+    } catch (reason) {
+      onFeedback({
+        tone: "danger",
+        message: reason instanceof ApiError ? reason.message : "Test edilemedi.",
+      });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function disconnect() {
+    try {
+      await api.delete(`/api/v1/integrations/accounts/${account.id}`);
+      onFeedback({
+        tone: "warning",
+        message: "Hesabın erişim anahtarları silindi; ilanlar korunuyor.",
+      });
+      onRefresh();
+    } catch (reason) {
+      onFeedback({
+        tone: "danger",
+        message: reason instanceof ApiError ? reason.message : "Bağlantı kesilemedi.",
+      });
+    }
+  }
+
+  async function purge() {
+    try {
+      await api.delete(`/api/v1/integrations/accounts/${account.id}/purge`);
+      onFeedback({ tone: "success", message: "Hesap kaydı kaldırıldı." });
+      onRefresh();
+    } catch (reason) {
+      onFeedback({
+        tone: "danger",
+        message: reason instanceof ApiError ? reason.message : "Kayıt kaldırılamadı.",
+      });
+    }
+  }
+
+  const disconnected = account.status === "disconnected";
+
+  return (
+    <li className="flex flex-col gap-3 rounded-[var(--radius-control)] bg-surface p-3 shadow-[var(--shadow-card)]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-[13px] font-medium text-ink">
+            {account.email_address}
+          </span>
+          <span className="text-[11.5px] text-ink-subtle">
+            {account.last_synced_at
+              ? `Son tarama ${formatDateTime(account.last_synced_at)} (${formatRelative(account.last_synced_at)})`
+              : "Hiç taranmadı"}
+            {account.initial_sync_completed ? "" : " · ilk tarama sürüyor"}
+          </span>
+        </div>
+        <Badge variant={statusTones[account.status] ?? "neutral"}>
+          {connectionStatusLabels[account.status] ?? account.status}
+        </Badge>
+      </div>
+
+      {account.last_error ? (
+        <p className="rounded-[var(--radius-control)] bg-danger-soft px-3 py-2 text-[11.5px] leading-4 text-danger">
+          {account.last_error}
+        </p>
+      ) : null}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Field label="Gönderen filtreleri" htmlFor={`senders-${account.id}`}>
+          <Input
+            id={`senders-${account.id}`}
+            value={senders}
+            onChange={(event) => setSenders(event.target.value)}
+            placeholder="linkedin.com, kariyer@firma.com"
+            autoComplete="off"
+          />
+        </Field>
+        <Field label="Konu filtreleri" htmlFor={`subjects-${account.id}`}>
+          <Input
+            id={`subjects-${account.id}`}
+            value={subjects}
+            onChange={(event) => setSubjects(event.target.value)}
+            placeholder="iş ilanı, job alert"
+            autoComplete="off"
+          />
+        </Field>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" loading={saving} onClick={saveFilters}>
+          <Save aria-hidden className="size-3.5" strokeWidth={2} />
+          Filtreleri kaydet
+        </Button>
+        <Button variant="ghost" size="sm" loading={testing} onClick={test}>
+          <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
+          Bağlantıyı test et
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onConnect}>
+          <ExternalLink aria-hidden className="size-3.5" strokeWidth={1.75} />
+          {disconnected ? "Yeniden bağlan" : "Yeniden yetkilendir"}
+        </Button>
+        {disconnected ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-ink-muted pointer-hover:text-danger"
+            onClick={purge}
+          >
+            <Trash2 aria-hidden className="size-3.5" strokeWidth={1.5} />
+            Kaydı kaldır
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-ink-muted pointer-hover:text-danger"
+            onClick={disconnect}
+          >
+            <Unplug aria-hidden className="size-3.5" strokeWidth={1.5} />
+            Bağlantıyı kes
+          </Button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function TelegramCard({ integration }: { integration: Integration }) {
+  return (
+    <Card data-testid="integration-card-telegram">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2">
+            <Send aria-hidden className="size-4" strokeWidth={1.75} />
+            {integration.label}
+          </CardTitle>
+          <Badge variant="neutral">3. aşama</Badge>
+        </div>
+        <CardDescription>
+          Kullanıcı bazlı bot token ve Chat ID 3. aşamada girilecek. Bu alanlar
+          şimdilik devre dışı; hiçbir Telegram çağrısı yapılmıyor.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <Field label="Bot token" htmlFor="telegram-token">
+          <Input id="telegram-token" value="" disabled placeholder="3. aşamada" readOnly />
+        </Field>
+        <Field label="Chat ID" htmlFor="telegram-chat">
+          <Input id="telegram-chat" value="" disabled placeholder="3. aşamada" readOnly />
+        </Field>
+        <Button variant="secondary" disabled>
+          <Plug aria-hidden className="size-3.5" strokeWidth={2} />
+          Bağlan (3. aşama)
+        </Button>
       </CardContent>
     </Card>
+  );
+}
+
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-ink-subtle">{label}</span>
+      <span
+        className={cn(
+          "truncate text-right font-medium text-ink",
+          mono && "font-mono text-[11.5px]",
+        )}
+      >
+        {value}
+      </span>
+    </div>
   );
 }

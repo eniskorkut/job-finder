@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, History, Inbox } from "lucide-react";
+import { BellRing, History, Inbox, ListChecks } from "lucide-react";
 
 import { ErrorState } from "@/components/app/error-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/form";
@@ -17,8 +18,15 @@ import {
   sourceLabels,
   syncStatusLabels,
 } from "@/lib/format";
+import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/hooks";
-import type { NotificationEntry, Page, SyncHistoryEntry } from "@/lib/types";
+import type {
+  NotificationEntry,
+  Page,
+  SyncHistoryEntry,
+  SyncJob,
+  SyncJobProgress,
+} from "@/lib/types";
 
 const statusTones: Record<string, "success" | "danger" | "warning" | "neutral"> = {
   success: "success",
@@ -28,11 +36,35 @@ const statusTones: Record<string, "success" | "danger" | "warning" | "neutral"> 
   skipped: "neutral",
 };
 
-export function HistoryView() {
-  const [tab, setTab] = useState<"sync" | "notifications">("sync");
-  const [source, setSource] = useState("");
+const jobStatusLabels: Record<string, string> = {
+  queued: "Kuyrukta",
+  running: "Sürüyor",
+  completed: "Tamamlandı",
+  partial_failed: "Kısmi başarılı",
+  failed: "Başarısız",
+  cancelled: "İptal edildi",
+};
 
-  const sync = useApiQuery<Page<SyncHistoryEntry>>("/api/v1/sync/history");
+const jobTones: Record<string, "success" | "danger" | "warning" | "neutral" | "accent"> = {
+  queued: "neutral",
+  running: "accent",
+  completed: "success",
+  partial_failed: "warning",
+  failed: "danger",
+  cancelled: "neutral",
+};
+
+export function HistoryView() {
+  const [tab, setTab] = useState<"jobs" | "sync" | "notifications">("jobs");
+  const [source, setSource] = useState("");
+  const [selectedJob, setSelectedJob] = useState<SyncJobProgress | null>(null);
+
+  const jobs = useApiQuery<Page<SyncJob>>(
+    tab === "jobs" ? "/api/v1/sync/jobs" : null,
+  );
+  const sync = useApiQuery<Page<SyncHistoryEntry>>(
+    tab === "sync" ? "/api/v1/sync/history" : null,
+  );
   const notifications = useApiQuery<Page<NotificationEntry>>(
     tab === "notifications" ? "/api/v1/notifications" : null,
   );
@@ -50,6 +82,7 @@ export function HistoryView() {
           className="inline-flex rounded-[var(--radius-card)] bg-surface-muted p-1"
         >
           {[
+            { value: "jobs" as const, label: "Tarama işleri", icon: ListChecks },
             { value: "sync" as const, label: "Tarama geçmişi", icon: History },
             { value: "notifications" as const, label: "Bildirimler", icon: BellRing },
           ].map((item) => {
@@ -80,7 +113,130 @@ export function HistoryView() {
           })}
         </div>
 
-        {tab === "sync" ? (
+        {tab === "jobs" ? (
+        jobs.loading ? (
+          <SkeletonRows rows={3} />
+        ) : jobs.error ? (
+          <Card>
+            <ErrorState error={jobs.error} onRetry={jobs.refetch} />
+          </Card>
+        ) : !jobs.data || jobs.data.items.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={ListChecks}
+              title="Henüz tarama işi yok"
+              description="Paneldeki 'Şimdi Tara' düğmesiyle kalıcı bir tarama işi kuyruğa alın."
+            />
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="pt-4">
+              <Table>
+                <THead>
+                  <TR className="pointer-hover:bg-transparent">
+                    <TH>İstek</TH>
+                    <TH>Durum</TH>
+                    <TH className="text-right">Hesap</TH>
+                    <TH className="text-right">Mesaj</TH>
+                    <TH className="text-right">Yeni</TH>
+                    <TH className="text-right">Tekrar</TH>
+                    <TH className="text-right">Hata</TH>
+                    <TH />
+                  </TR>
+                </THead>
+                <tbody>
+                  {jobs.data.items.map((job) => (
+                    <TR key={job.id}>
+                      <TD className="text-[12.5px]">
+                        {formatDateTime(job.requested_at)}
+                        <span className="block text-[11px] text-ink-subtle">
+                          {formatRelative(job.requested_at)}
+                        </span>
+                      </TD>
+                      <TD>
+                        <Badge variant={jobTones[job.status] ?? "neutral"}>
+                          {jobStatusLabels[job.status] ?? job.status}
+                        </Badge>
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.accounts_processed}/{job.accounts_total}
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.messages_scanned}
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">{job.jobs_new}</TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.jobs_duplicate}
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.errors_count}
+                      </TD>
+                      <TD className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            const data = await api.get<SyncJobProgress>(
+                              `/api/v1/sync/jobs/${job.id}`,
+                            );
+                            setSelectedJob(data);
+                          }}
+                        >
+                          Ayrıntı
+                        </Button>
+                      </TD>
+                    </TR>
+                  ))}
+                </tbody>
+              </Table>
+
+              {selectedJob ? (
+                <div className="mt-4 flex flex-col gap-2 rounded-[var(--radius-card)] bg-surface-muted p-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12.5px] font-medium text-ink">
+                      İş ayrıntısı · {selectedJob.job.id.slice(0, 8)}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedJob(null)}>
+                      Kapat
+                    </Button>
+                  </div>
+                  {selectedJob.accounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface px-3 py-2 text-[12px] shadow-[var(--shadow-card)]"
+                    >
+                      <span className="flex flex-col">
+                        <span className="font-medium text-ink">
+                          {account.email_address ?? "hesap"}
+                        </span>
+                        <span className="text-ink-subtle">
+                          {account.messages_scanned} mesaj · {account.jobs_new} yeni ·{" "}
+                          {account.jobs_duplicate} tekrar · {account.messages_skipped}{" "}
+                          atlandı
+                        </span>
+                        {account.error_message ? (
+                          <span className="text-danger">{account.error_message}</span>
+                        ) : null}
+                      </span>
+                      <Badge
+                        variant={
+                          account.status === "succeeded"
+                            ? "success"
+                            : account.status === "failed"
+                              ? "danger"
+                              : "neutral"
+                        }
+                      >
+                        {account.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        )
+      ) : tab === "sync" ? (
           <Select
             value={source}
             onChange={(event) => setSource(event.target.value)}
@@ -95,7 +251,130 @@ export function HistoryView() {
         ) : null}
       </div>
 
-      {tab === "sync" ? (
+      {tab === "jobs" ? (
+        jobs.loading ? (
+          <SkeletonRows rows={3} />
+        ) : jobs.error ? (
+          <Card>
+            <ErrorState error={jobs.error} onRetry={jobs.refetch} />
+          </Card>
+        ) : !jobs.data || jobs.data.items.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={ListChecks}
+              title="Henüz tarama işi yok"
+              description="Paneldeki 'Şimdi Tara' düğmesiyle kalıcı bir tarama işi kuyruğa alın."
+            />
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="pt-4">
+              <Table>
+                <THead>
+                  <TR className="pointer-hover:bg-transparent">
+                    <TH>İstek</TH>
+                    <TH>Durum</TH>
+                    <TH className="text-right">Hesap</TH>
+                    <TH className="text-right">Mesaj</TH>
+                    <TH className="text-right">Yeni</TH>
+                    <TH className="text-right">Tekrar</TH>
+                    <TH className="text-right">Hata</TH>
+                    <TH />
+                  </TR>
+                </THead>
+                <tbody>
+                  {jobs.data.items.map((job) => (
+                    <TR key={job.id}>
+                      <TD className="text-[12.5px]">
+                        {formatDateTime(job.requested_at)}
+                        <span className="block text-[11px] text-ink-subtle">
+                          {formatRelative(job.requested_at)}
+                        </span>
+                      </TD>
+                      <TD>
+                        <Badge variant={jobTones[job.status] ?? "neutral"}>
+                          {jobStatusLabels[job.status] ?? job.status}
+                        </Badge>
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.accounts_processed}/{job.accounts_total}
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.messages_scanned}
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">{job.jobs_new}</TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.jobs_duplicate}
+                      </TD>
+                      <TD className="tabular text-right text-[12.5px]">
+                        {job.errors_count}
+                      </TD>
+                      <TD className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            const data = await api.get<SyncJobProgress>(
+                              `/api/v1/sync/jobs/${job.id}`,
+                            );
+                            setSelectedJob(data);
+                          }}
+                        >
+                          Ayrıntı
+                        </Button>
+                      </TD>
+                    </TR>
+                  ))}
+                </tbody>
+              </Table>
+
+              {selectedJob ? (
+                <div className="mt-4 flex flex-col gap-2 rounded-[var(--radius-card)] bg-surface-muted p-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12.5px] font-medium text-ink">
+                      İş ayrıntısı · {selectedJob.job.id.slice(0, 8)}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedJob(null)}>
+                      Kapat
+                    </Button>
+                  </div>
+                  {selectedJob.accounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface px-3 py-2 text-[12px] shadow-[var(--shadow-card)]"
+                    >
+                      <span className="flex flex-col">
+                        <span className="font-medium text-ink">
+                          {account.email_address ?? "hesap"}
+                        </span>
+                        <span className="text-ink-subtle">
+                          {account.messages_scanned} mesaj · {account.jobs_new} yeni ·{" "}
+                          {account.jobs_duplicate} tekrar · {account.messages_skipped}{" "}
+                          atlandı
+                        </span>
+                        {account.error_message ? (
+                          <span className="text-danger">{account.error_message}</span>
+                        ) : null}
+                      </span>
+                      <Badge
+                        variant={
+                          account.status === "succeeded"
+                            ? "success"
+                            : account.status === "failed"
+                              ? "danger"
+                              : "neutral"
+                        }
+                      >
+                        {account.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        )
+      ) : tab === "sync" ? (
         sync.loading ? (
           <SkeletonRows rows={3} />
         ) : sync.error ? (

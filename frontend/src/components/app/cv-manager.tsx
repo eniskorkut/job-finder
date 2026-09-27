@@ -2,8 +2,11 @@
 
 import { useRef, useState } from "react";
 import {
+  AlertTriangle,
   Download,
+  Eye,
   FileText,
+  ScanText,
   Trash2,
   UploadCloud,
 } from "lucide-react";
@@ -19,7 +22,7 @@ import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
-import type { CV } from "@/lib/types";
+import type { CV, CVPreview } from "@/lib/types";
 
 const ACCEPTED = ".pdf,.doc,.docx,.txt,.md";
 
@@ -31,6 +34,8 @@ export function CVManager() {
   const [feedback, setFeedback] = useState<
     { tone: "success" | "danger"; message: string } | null
   >(null);
+  const [preview, setPreview] = useState<CVPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
 
   async function upload(file: File) {
     setUploading(true);
@@ -62,6 +67,22 @@ export function CVManager() {
         tone: "danger",
         message: error instanceof ApiError ? error.message : "Güncellenemedi.",
       });
+    }
+  }
+
+  async function openPreview(cv: CV) {
+    setPreviewLoading(cv.id);
+    setFeedback(null);
+    try {
+      const data = await api.get<CVPreview>(`/api/v1/cvs/${cv.id}/preview`);
+      setPreview(data);
+    } catch (error) {
+      setFeedback({
+        tone: "danger",
+        message: error instanceof ApiError ? error.message : "Metin okunamadı.",
+      });
+    } finally {
+      setPreviewLoading(null);
     }
   }
 
@@ -178,8 +199,8 @@ export function CVManager() {
                       )}
                     </span>
                     <span className="truncate text-[11.5px] text-ink-subtle">
-                      {formatBytes(cv.size_bytes)} · {formatDateTime(cv.created_at)}
-                      {cv.has_extracted_text ? " · metin çıkarıldı" : ""}
+                      {formatBytes(cv.size_bytes)} · {formatDateTime(cv.created_at)} ·{" "}
+                      {extractionLabels[cv.extraction_status] ?? cv.extraction_status}
                     </span>
                   </div>
                 </div>
@@ -193,6 +214,15 @@ export function CVManager() {
                   >
                     <Download aria-hidden className="size-4" strokeWidth={1.5} />
                   </a>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={previewLoading === cv.id}
+                    onClick={() => openPreview(cv)}
+                  >
+                    <Eye aria-hidden className="size-3.5" strokeWidth={1.75} />
+                    Metni gör
+                  </Button>
                   {cv.is_active ? null : (
                     <Button
                       variant="secondary"
@@ -217,7 +247,65 @@ export function CVManager() {
             ))}
           </ul>
         )}
+
+        {preview ? (
+          <div className="flex flex-col gap-2 rounded-[var(--radius-card)] bg-surface-muted p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-[12.5px] font-medium text-ink">
+                <ScanText aria-hidden className="size-3.5" strokeWidth={2} />
+                {preview.filename} · çıkarılan metin
+              </span>
+              <span className="flex items-center gap-2">
+                <Badge
+                  variant={
+                    preview.extraction_status === "ok"
+                      ? "success"
+                      : preview.extraction_status === "failed"
+                        ? "danger"
+                        : "warning"
+                  }
+                >
+                  {extractionLabels[preview.extraction_status] ?? preview.extraction_status}
+                </Badge>
+                <Button variant="ghost" size="sm" onClick={() => setPreview(null)}>
+                  Kapat
+                </Button>
+              </span>
+            </div>
+
+            <span className="tabular text-[11.5px] text-ink-subtle">
+              {preview.character_count} karakter · {preview.line_count} satır ·
+              metin yalnızca sizin hesabınızda saklanır
+            </span>
+
+            {preview.extraction_warning ? (
+              <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-warning-soft px-3 py-2 text-[12px] leading-5 text-warning">
+                <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+                {preview.extraction_warning}
+              </p>
+            ) : null}
+
+            {preview.has_extracted_text ? (
+              <pre className="max-h-72 overflow-auto rounded-[var(--radius-control)] bg-surface p-3 font-mono text-[11.5px] leading-5 whitespace-pre-wrap text-ink shadow-[var(--shadow-card)]">
+                {preview.text}
+              </pre>
+            ) : (
+              <p className="text-[12px] text-ink-subtle">
+                Bu dosyadan metin çıkarılamadı.
+              </p>
+            )}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
+
+const extractionLabels: Record<string, string> = {
+  ok: "metin çıkarıldı",
+  ocr_required: "OCR gerekli",
+  unsupported: "desteklenmeyen biçim",
+  empty: "metin boş",
+  failed: "çıkarım başarısız",
+  pending: "metin çıkarılmadı",
+};

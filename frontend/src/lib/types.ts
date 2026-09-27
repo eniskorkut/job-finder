@@ -100,6 +100,8 @@ export interface CV {
   checksum: string | null;
   summary: string | null;
   has_extracted_text: boolean;
+  extraction_status: "ok" | "ocr_required" | "unsupported" | "empty" | "failed" | "pending";
+  extraction_warning: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -111,9 +113,25 @@ export interface MailAccount {
   email_address: string;
   display_name: string | null;
   status: string;
+  filters: { senders?: string[]; subjects?: string[] };
+  initial_sync_completed: boolean;
   last_synced_at: string | null;
   last_error: string | null;
   created_at: string;
+}
+
+export interface OAuthClientConfig {
+  provider: string;
+  configured: boolean;
+  client_id: string | null;
+  client_secret_hint: string | null;
+  tenant: string | null;
+  redirect_uri: string;
+  scopes: string[];
+  title: string;
+  steps: string[];
+  notes: string[];
+  updated_at: string | null;
 }
 
 export interface Integration {
@@ -128,6 +146,8 @@ export interface Integration {
   accounts: MailAccount[];
   detail: string | null;
   last_synced_at: string | null;
+  oauth_client: OAuthClientConfig | null;
+  capabilities: Record<string, unknown>;
 }
 
 export interface IntegrationsResponse {
@@ -143,6 +163,93 @@ export interface IntegrationsResponse {
     phase: string;
     note: string;
   };
+}
+
+export interface ConnectResponse {
+  provider: string;
+  authorization_url: string;
+  redirect_uri: string;
+  expires_at: string;
+  account_id: string | null;
+}
+
+export interface AccountTestResponse {
+  ok: boolean;
+  status: string;
+  message: string;
+}
+
+export type SyncJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "partial_failed"
+  | "failed"
+  | "cancelled";
+
+export interface SyncJob {
+  id: string;
+  status: SyncJobStatus;
+  trigger: string;
+  accounts_total: number;
+  accounts_processed: number;
+  messages_scanned: number;
+  jobs_found: number;
+  jobs_new: number;
+  jobs_duplicate: number;
+  messages_skipped: number;
+  errors_count: number;
+  attempt: number;
+  cancel_requested: boolean;
+  error_message: string | null;
+  requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface SyncAccountProgress {
+  id: string;
+  mail_account_id: string;
+  email_address: string | null;
+  provider: string | null;
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+  messages_scanned: number;
+  jobs_found: number;
+  jobs_new: number;
+  jobs_duplicate: number;
+  messages_skipped: number;
+  error_class: string;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface SyncJobProgress {
+  job: SyncJob;
+  accounts: SyncAccountProgress[];
+}
+
+export interface SyncRunResponse {
+  job_id: string;
+  status: SyncJobStatus;
+  accounts_total: number;
+  requested_at: string;
+  message: string;
+}
+
+export interface CVPreview {
+  id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number;
+  is_active: boolean;
+  extraction_status: "ok" | "ocr_required" | "unsupported" | "empty" | "failed" | "pending";
+  extraction_warning: string | null;
+  has_extracted_text: boolean;
+  character_count: number;
+  line_count: number;
+  text: string;
+  truncated: boolean;
 }
 
 export interface SyncHistoryEntry {
@@ -168,6 +275,8 @@ export interface SyncStatus {
   next_scan_at: string | null;
   active_cv: string | null;
   connected_accounts: number;
+  active_job_id: string | null;
+  worker_hint: string | null;
 }
 
 export interface NotificationEntry {
@@ -208,6 +317,9 @@ export interface Overview {
   has_mock_data: boolean;
   has_active_cv: boolean;
   sync_available: boolean;
+  connected_accounts: number;
+  active_job_id: string | null;
+  worker_hint: string | null;
 }
 
 export interface Invitation {

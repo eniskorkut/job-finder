@@ -6,21 +6,21 @@ import {
   BriefcaseBusiness,
   FileText,
   FlaskConical,
-  RefreshCcw,
   Sparkles,
   Telescope,
 } from "lucide-react";
 
 import { ErrorState } from "@/components/app/error-state";
+import { SyncPanel } from "@/components/app/sync-panel";
 import { useSession } from "@/components/app/session-provider";
 import { StatCard } from "@/components/app/stat-card";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonStyles } from "@/components/ui/button";
+import { buttonStyles } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScoreBadge } from "@/components/ui/score";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError, buildQuery } from "@/lib/api";
+import { buildQuery } from "@/lib/api";
 import { formatDateTime, workModeLabels } from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
 import type { Job, JobStats, Overview, Page } from "@/lib/types";
@@ -40,28 +40,6 @@ export function DashboardView() {
   const recent = useApiQuery<Page<Job>>(
     `/api/v1/jobs${buildQuery({ sort: "score", page_size: 5 })}`,
   );
-
-  const [scanMessage, setScanMessage] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
-
-  async function runScan() {
-    setScanning(true);
-    setScanMessage(null);
-    try {
-      await api.post("/api/v1/sync/run");
-      setScanMessage(
-        "Tarama başlatıldı. (Bu mesajı görmemelisiniz; tarama henüz geliştirilmedi.)",
-      );
-    } catch (error) {
-      setScanMessage(
-        error instanceof ApiError
-          ? error.message
-          : "Tarama başlatılamadı.",
-      );
-    } finally {
-      setScanning(false);
-    }
-  }
 
   const loading = overview.loading || stats.loading;
   const error = overview.error ?? stats.error;
@@ -186,37 +164,14 @@ export function DashboardView() {
         </Card>
 
         <div className="flex flex-col gap-5">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tarama</CardTitle>
-              <CardDescription>
-                {overview.data?.last_sync_at
-                  ? `Son tarama: ${formatDateTime(overview.data.last_sync_at)}`
-                  : "Henüz tarama yapılmadı"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <Button onClick={runScan} loading={scanning}>
-                {scanning ? null : (
-                  <RefreshCcw aria-hidden className="size-4" strokeWidth={2} />
-                )}
-                Şimdi Tara
-              </Button>
-              {scanMessage ? (
-                <div
-                  role="status"
-                  className="rounded-[var(--radius-card)] bg-warning-soft px-3.5 py-2.5 text-[12px] leading-5 text-warning"
-                >
-                  {scanMessage}
-                </div>
-              ) : (
-                <p className="text-[11.5px] leading-4 text-ink-subtle">
-                  Tarama; Gmail/Hotmail okuma (2. aşama), DeepSeek skorlama ve
-                  Telegram bildirimi (3. aşama) hazır olduğunda çalışacak.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <SyncPanel
+            compact
+            onFinished={() => {
+              overview.refetch();
+              stats.refetch();
+              recent.refetch();
+            }}
+          />
 
           <Card>
             <CardHeader>

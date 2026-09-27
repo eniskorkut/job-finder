@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from app.api.deps import CurrentUser, DbSession
 from app.core import errors
 from app.schemas.common import MessageResponse
-from app.schemas.cv import CVRead, CVUpdate
+from app.schemas.cv import CVPreview, CVRead, CVUpdate
 from app.services.cv_service import CVService
 
 
@@ -62,6 +62,20 @@ def delete_cv(cv_id: uuid.UUID, user: CurrentUser, db: DbSession) -> MessageResp
     CVService(db).delete(user, cv_id)
     db.commit()
     return MessageResponse(message="CV silindi.", code="cv_deleted")
+
+
+@router.get("/{cv_id}/preview", response_model=CVPreview)
+def preview_cv(cv_id: uuid.UUID, user: CurrentUser, db: DbSession) -> CVPreview:
+    """Extracted text, visible to the owner only and never sent to a provider."""
+    return CVPreview.model_validate(CVService(db).preview(user, cv_id))
+
+
+@router.post("/{cv_id}/extract", response_model=CVPreview)
+def reextract_cv(cv_id: uuid.UUID, user: CurrentUser, db: DbSession) -> CVPreview:
+    service = CVService(db)
+    service.reextract(user, cv_id)
+    db.commit()
+    return CVPreview.model_validate(service.preview(user, cv_id))
 
 
 @router.get("/{cv_id}/download")

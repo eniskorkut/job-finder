@@ -29,9 +29,16 @@ def create_db_engine(database_url: str | None = None) -> Engine:
     if url.startswith("sqlite"):
 
         @event.listens_for(engine, "connect")
-        def _enable_foreign_keys(dbapi_connection, _record):  # type: ignore[no-untyped-def]
+        def _sqlite_pragmas(dbapi_connection, _record):  # type: ignore[no-untyped-def]
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            # WAL + a busy timeout keep the API and the worker process from
+            # tripping over each other on the same SQLite file. PostgreSQL
+            # handles this natively when DATABASE_URL is swapped.
+            if not url.endswith(":memory:"):
+                cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.close()
 
     return engine

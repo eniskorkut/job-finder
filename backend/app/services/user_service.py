@@ -11,6 +11,7 @@ from app.models.user import User
 from app.repositories.cvs import CVRepository
 from app.repositories.integrations import SyncHistoryRepository, TelegramRepository
 from app.repositories.jobs import JobRepository, MailAccountRepository
+from app.repositories.sync_jobs import SyncJobRepository
 from app.repositories.preferences import PreferenceRepository
 from app.repositories.users import UserRepository
 from app.schemas.user import IntegrationStatusSummary, OverviewResponse
@@ -26,6 +27,7 @@ class UserService:
         self.accounts = MailAccountRepository(db)
         self.telegram = TelegramRepository(db)
         self.sync_history = SyncHistoryRepository(db)
+        self.sync_jobs = SyncJobRepository(db)
 
     def create_user(
         self,
@@ -78,15 +80,20 @@ class UserService:
 
         telegram = self.telegram.get_for_user(user.id)
         telegram_status = telegram.status if telegram is not None else ConnectionStatus.DISCONNECTED.value
+        active_job = self.sync_jobs.active_for_user(user.id)
+        latest_job = self.sync_jobs.latest_for_user(user.id)
+        connected_accounts = sum(
+            1 for account in accounts if account.status == ConnectionStatus.CONNECTED.value
+        )
 
         integrations = [
             IntegrationStatusSummary(
                 provider="gmail",
                 label="Gmail",
                 status=_aggregate_status(accounts, "gmail"),
-                available=False,
+                available=True,
                 account_count=sum(1 for a in accounts if a.provider == "gmail"),
-                detail="Google OAuth entegrasyonu 2. aşamada eklenecek.",
+                detail="Kendi Google OAuth uygulamanızla bağlanır.",
                 last_synced_at=_max_dt(
                     [a.last_synced_at for a in accounts if a.provider == "gmail"]
                 ),
@@ -95,9 +102,9 @@ class UserService:
                 provider="outlook",
                 label="Hotmail / Outlook",
                 status=_aggregate_status(accounts, "outlook"),
-                available=False,
+                available=True,
                 account_count=sum(1 for a in accounts if a.provider == "outlook"),
-                detail="Microsoft Graph entegrasyonu 2. aşamada eklenecek.",
+                detail="Kendi Microsoft Entra uygulamanızla bağlanır.",
                 last_synced_at=_max_dt(
                     [a.last_synced_at for a in accounts if a.provider == "outlook"]
                 ),
@@ -113,7 +120,16 @@ class UserService:
             ),
         ]
 
-        last_sync_at = last_sync.started_at if last_sync else None
+        last_sync_at = None
+        last_sync_status = None
+        if latest_job is not None:
+            last_sync_at = (
+                latest_job.finished_at or latest_job.started_at or latest_job.requested_at
+            )
+            last_sync_status = latest_job.status
+        elif last_sync is not None:
+            last_sync_at = last_sync.started_at
+            last_sync_status = last_sync.status
         next_scan_at = None
         if preferences.daily_scan_enabled and last_sync_at is not None:
             next_scan_at = last_sync_at + timedelta(hours=preferences.scan_interval_hours)
@@ -125,12 +141,15 @@ class UserService:
             saved_jobs=stats["saved_jobs"],
             high_match_threshold=stats["high_match_threshold"],
             last_sync_at=last_sync_at,
-            last_sync_status=last_sync.status if last_sync else None,
+            last_sync_status=last_sync_status,
             next_scan_at=next_scan_at,
             integrations=integrations,
             has_mock_data=stats["mock_jobs"] > 0,
             has_active_cv=self.cvs.get_active_for_user(user.id) is not None,
-            sync_available=False,
+            sync_available=True,
+            connected_accounts=connected_accounts,
+            active_job_id=active_job.id if active_job else None,
+            worker_hint="python -m app.worker",
         )
 
 

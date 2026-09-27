@@ -55,6 +55,44 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=list)
 
+    # --- Phase 2: mailbox scan -------------------------------------------
+    # First scan window. Historical full-mailbox scans must be requested
+    # explicitly; these bound the default work per run.
+    sync_initial_window_days: int = 7
+    sync_initial_max_messages: int = 100
+    sync_max_results_per_run: int = 200
+    sync_batch_size: int = 25
+
+    # Concurrency: total mailboxes worked in parallel and outbound requests
+    # per mailbox. Keep these conservative because provider quotas are real.
+    sync_max_active_mailboxes: int = 4
+    sync_mailbox_concurrency: int = 2
+
+    # Durable job queue
+    sync_lease_seconds: int = 180
+    sync_heartbeat_seconds: int = 15
+    sync_job_timeout_seconds: int = 900
+    sync_max_attempts: int = 3
+    worker_poll_seconds: float = 2.0
+    worker_id: str = ""
+
+    # Outbound HTTP
+    sync_http_timeout_seconds: float = 30.0
+    sync_http_max_connections: int = 10
+    sync_retry_max_attempts: int = 4
+    sync_retry_base_delay_seconds: float = 1.0
+    sync_retry_max_delay_seconds: float = 30.0
+
+    # Hosts we are willing to follow provider continuation links to. Used to
+    # reject attacker controlled URLs before attaching an access token.
+    graph_allowed_hosts: str = "graph.microsoft.com"
+    google_allowed_hosts: str = (
+        "www.googleapis.com,gmail.googleapis.com,oauth2.googleapis.com,accounts.google.com"
+    )
+    microsoft_allowed_hosts: str = (
+        "login.microsoftonline.com,login.live.com,graph.microsoft.com"
+    )
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
@@ -80,8 +118,32 @@ class Settings(BaseSettings):
         return sorted(origins)
 
     @property
+    def graph_hosts(self) -> list[str]:
+        return _split_hosts(self.graph_allowed_hosts)
+
+    @property
+    def google_hosts(self) -> list[str]:
+        return _split_hosts(self.google_allowed_hosts)
+
+    @property
+    def microsoft_hosts(self) -> list[str]:
+        return _split_hosts(self.microsoft_allowed_hosts)
+
+    @property
+    def gmail_redirect_uri(self) -> str:
+        return f"{self.backend_url.rstrip('/')}/api/v1/integrations/gmail/callback"
+
+    @property
+    def outlook_redirect_uri(self) -> str:
+        return f"{self.backend_url.rstrip('/')}/api/v1/integrations/outlook/callback"
+
+    @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+
+def _split_hosts(value: str) -> list[str]:
+    return [host.strip().lower() for host in value.split(",") if host.strip()]
 
 
 @lru_cache

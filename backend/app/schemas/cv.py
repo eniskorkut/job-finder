@@ -16,6 +16,8 @@ class CVRead(ORMModel):
     checksum: str | None = None
     summary: str | None = None
     has_extracted_text: bool = False
+    extraction_status: str = "pending"
+    extraction_warning: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -24,3 +26,18 @@ class CVRead(ORMModel):
 class CVUpdate(ORMModel):
     is_active: bool | None = None
     summary: str | None = Field(default=None, max_length=2000)
+
+
+class CVPreview(ORMModel):
+    id: uuid.UUID
+    filename: str
+    content_type: str | None = None
+    size_bytes: int
+    is_active: bool
+    extraction_status: str
+    extraction_warning: str | None = None
+    has_extracted_text: bool
+    character_count: int
+    line_count: int
+    text: str
+    truncated: bool = False

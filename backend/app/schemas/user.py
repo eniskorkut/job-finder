@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from pydantic import EmailStr, Field
@@ -40,3 +41,6 @@ class OverviewResponse(ORMModel):
     has_mock_data: bool
     has_active_cv: bool
     sync_available: bool
+    connected_accounts: int = 0
+    active_job_id: uuid.UUID | None = None
+    worker_hint: str | None = None

@@ -38,3 +38,13 @@ class OAuthStateRepository(Repository[OAuthState]):
             OAuthState.id == state_id, OAuthState.user_id == user_id
         )
         return self.db.execute(stmt).scalar_one_or_none()
+
+    def list_pending_for_session(
+        self, session_id: uuid.UUID, provider: str
+    ) -> list[OAuthState]:
+        stmt = select(OAuthState).where(
+            OAuthState.session_id == session_id,
+            OAuthState.provider == provider,
+            OAuthState.consumed_at.is_(None),
+        )
+        return list(self.db.execute(stmt).scalars())

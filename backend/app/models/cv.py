@@ -23,6 +23,10 @@ class CV(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     summary: Mapped[str | None] = mapped_column(Text, default=None)
     extracted_text: Mapped[str | None] = mapped_column(Text, default=None)
+    extraction_status: Mapped[str] = mapped_column(
+        String(30), default="pending", server_default="pending"
+    )
+    extraction_warning: Mapped[str | None] = mapped_column(String(300), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     user: Mapped["User"] = relationship(back_populates="cvs")  # noqa: F821

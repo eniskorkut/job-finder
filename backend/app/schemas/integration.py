@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from pydantic import BaseModel, Field, field_validator
+
 from app.schemas.common import ORMModel
 
 
@@ -12,9 +14,78 @@ class MailAccountRead(ORMModel):
     email_address: str
     display_name: str | None = None
     status: str
+    filters: dict = Field(default_factory=dict)
+    initial_sync_completed: bool = False
     last_synced_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime
+
+
+class OAuthClientRead(ORMModel):
+    provider: str
+    configured: bool
+    client_id: str | None = None
+    client_secret_hint: str | None = None
+    tenant: str | None = None
+    redirect_uri: str
+    scopes: list[str]
+    title: str
+    steps: list[str]
+    notes: list[str]
+    updated_at: datetime | None = None
+
+
+class OAuthClientSaveRequest(BaseModel):
+    client_id: str = Field(min_length=8, max_length=255)
+    client_secret: str | None = Field(default=None, max_length=400)
+    tenant: str | None = Field(default=None, max_length=120)
+
+    @field_validator("client_id")
+    @classmethod
+    def _strip_client_id(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("client_secret")
+    @classmethod
+    def _strip_secret(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("tenant")
+    @classmethod
+    def _strip_tenant(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
+
+
+class MailAccountUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    senders: list[str] | None = Field(default=None, max_length=25)
+    subjects: list[str] | None = Field(default=None, max_length=25)
+    reset_cursor: bool = False
+
+    @field_validator("senders", "subjects")
+    @classmethod
+    def _clean_terms(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [" ".join(item.split())[:120] for item in value]
+        return [item for item in cleaned if item]
+
+
+class ConnectResponse(BaseModel):
+    provider: str
+    authorization_url: str
+    redirect_uri: str
+    expires_at: datetime
+    account_id: str | None = None
+
+
+class AccountTestResponse(BaseModel):
+    ok: bool
+    status: str
+    message: str
 
 
 class IntegrationRead(ORMModel):
@@ -29,6 +100,8 @@ class IntegrationRead(ORMModel):
     accounts: list[MailAccountRead] = []
     detail: str | None = None
     last_synced_at: datetime | None = None
+    oauth_client: OAuthClientRead | None = None
+    capabilities: dict = Field(default_factory=dict)
 
 
 class IntegrationsResponse(ORMModel):

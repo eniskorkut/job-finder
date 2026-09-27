@@ -60,3 +60,52 @@ class NotificationStatus(StrEnum):
 class UserRole(StrEnum):
     OWNER = "owner"
     MEMBER = "member"
+
+
+class SyncJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    PARTIAL_FAILED = "partial_failed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class SyncJobAccountStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class SyncTrigger(StrEnum):
+    MANUAL = "manual"
+    RETRY = "retry"
+    WORKER_RECOVERY = "worker_recovery"
+
+
+class CursorKind(StrEnum):
+    NONE = "none"
+    GMAIL_HISTORY = "gmail_history"
+    GRAPH_DELTA = "graph_delta"
+
+
+class ProcessedMessageStatus(StrEnum):
+    PROCESSED = "processed"
+    SKIPPED = "skipped"
+    ERROR = "error"
+
+
+class DescriptionStatus(StrEnum):
+    OK = "ok"
+    INSUFFICIENT = "insufficient_description"
+
+
+class ErrorClass(StrEnum):
+    NONE = "none"
+    AUTH = "auth"
+    RATE_LIMIT = "rate_limit"
+    TRANSIENT = "transient"
+    PERMANENT = "permanent"
+    CURSOR_EXPIRED = "cursor_expired"

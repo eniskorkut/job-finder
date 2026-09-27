@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from email.message import Message
+from enum import StrEnum
+
+from app.models.enums import CursorKind
 
 
 class IntegrationNotImplemented(NotImplementedError):
@@ -58,6 +61,10 @@ class JobPostingCandidate:
     description: str | None = None
     external_id: str | None = None
     raw_message: RawMessage | None = None
+    # "ok" when the alert carried enough text to be useful, otherwise
+    # DescriptionStatus.INSUFFICIENT - the UI badges those instead of the
+    # parser inventing content that was not in the e-mail.
+    description_status: str = "ok"
 
 
 @dataclass(slots=True)
@@ -69,36 +76,116 @@ class MatchScore:
     model: str | None = None
 
 
+@dataclass(slots=True)
+class TokenSet:
+    access_token: str
+    refresh_token: str | None = None
+    expires_at: datetime | None = None
+    scopes: list[str] = field(default_factory=list)
+    token_type: str = "Bearer"
+    # MSAL keeps its own cache (encrypted at rest); Gmail does not use it.
+    cache_serialized: str | None = None
+
+
+@dataclass(slots=True)
+class ProviderIdentity:
+    """Who the provider says the mailbox belongs to. Never client supplied."""
+
+    email_address: str
+    provider_account_id: str
+    display_name: str | None = None
+
+
+class ScanMode(StrEnum):
+    INITIAL = "initial"
+    INCREMENTAL = "incremental"
+
+
+@dataclass(slots=True)
+class MailQuery:
+    senders: list[str] = field(default_factory=list)
+    subjects: list[str] = field(default_factory=list)
+    since: datetime | None = None
+    limit: int = 100
+    batch_size: int = 25
+
+
+@dataclass(slots=True)
+class MessagePage:
+    """One page of a scan.
+
+    ``next_cursor`` continues pagination; ``checkpoint_cursor`` is what may be
+    persisted once this page is fully processed (a Gmail ``historyId`` or a
+    Graph ``deltaLink``).
+    """
+
+    refs: list[str] = field(default_factory=list)
+    messages: list[RawMessage] = field(default_factory=list)
+    next_cursor: str | None = None
+    checkpoint_cursor: str | None = None
+    cursor_kind: CursorKind = CursorKind.NONE
+    done: bool = True
+
+
 class MailProviderClient(ABC):
-    """Read-only mailbox access used by the scan pipeline."""
+    """Async, read-only mailbox access used by the scan pipeline.
+
+    Implementations must never receive a database session: the scan service
+    owns persistence so provider code stays testable with a fake transport.
+    """
 
     provider: str
-    phase: str
     capabilities: ProviderCapabilities
 
     @abstractmethod
-    def authorization_url(self, *, state: str, code_challenge: str) -> str:
-        """Return the provider consent URL for the OAuth dance."""
+    def authorization_url(
+        self,
+        *,
+        state: str,
+        code_challenge: str | None = None,
+        login_hint: str | None = None,
+    ) -> str:
+        """Provider consent URL for the OAuth authorization-code flow."""
 
     @abstractmethod
-    def exchange_code(self, *, code: str, code_verifier: str) -> dict:
+    async def exchange_code(
+        self,
+        *,
+        code: str,
+        code_verifier: str | None = None,
+        cache: str | None = None,
+    ) -> TokenSet:
         """Exchange an authorization code for tokens."""
 
     @abstractmethod
-    def refresh_tokens(self, *, refresh_token: str) -> dict:
-        """Refresh an access token."""
+    async def refresh(
+        self,
+        *,
+        refresh_token: str | None = None,
+        cache: str | None = None,
+        account_id: str | None = None,
+    ) -> TokenSet:
+        """Obtain a fresh access token (refresh token or MSAL silent cache)."""
 
     @abstractmethod
-    def search_job_emails(self, *, access_token: str, query: MailSearchQuery) -> list[RawMessage]:
-        """List candidate job alert e-mails."""
+    async def verify_identity(self, *, access_token: str) -> ProviderIdentity:
+        """Resolve the real mailbox address from the provider."""
 
     @abstractmethod
-    def fetch_message(self, *, access_token: str, message_id: str) -> RawMessage:
-        """Fetch one full message."""
+    async def fetch_page(
+        self,
+        *,
+        access_token: str,
+        mode: ScanMode,
+        query: MailQuery,
+        cursor: str | None = None,
+        first_page: bool = False,
+    ) -> MessagePage:
+        """List candidate job-alert messages (ids, or full bodies for Graph)."""
 
     @abstractmethod
-    def parse_job_emails(self, messages: list[RawMessage]) -> list[JobPostingCandidate]:
-        """Turn raw alert e-mails into structured job posting candidates."""
+    async def fetch_message(self, *, access_token: str, message_id: str) -> RawMessage:
+        """Fetch and decode one full message."""
 
     def describe(self) -> ProviderCapabilities:
         return self.capabilities

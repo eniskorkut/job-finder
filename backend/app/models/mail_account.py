@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     JSON,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,12 +45,25 @@ class MailAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(20), default=ConnectionStatus.DISCONNECTED.value
     )
 
+    # Address/provider subject as confirmed by the provider (never client input).
+    provider_account_id: Mapped[str | None] = mapped_column(String(320), default=None)
+
     access_token_encrypted: Mapped[str | None] = mapped_column(Text, default=None)
     refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, default=None)
+    token_cache_encrypted: Mapped[str | None] = mapped_column(Text, default=None)
     token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
     scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    # Per mailbox email filters editable from the UI:
+    # {"senders": ["linkedin.com"], "subjects": ["iş ilanı", "job alert"]}
+    filters: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default=text("'{}'")
+    )
+    initial_sync_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0")
+    )
 
     search_query: Mapped[str | None] = mapped_column(String(300), default=None)
     last_synced_at: Mapped[datetime | None] = mapped_column(

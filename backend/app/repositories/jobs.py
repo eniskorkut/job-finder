@@ -234,6 +234,27 @@ class MailAccountRepository(Repository[MailAccount]):
             return None
         return account
 
+    def get_by_address(
+        self, user_id: uuid.UUID, provider: str, email_address: str
+    ) -> MailAccount | None:
+        stmt = select(MailAccount).where(
+            MailAccount.user_id == user_id,
+            MailAccount.provider == provider,
+            func.lower(MailAccount.email_address) == email_address.strip().lower(),
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def list_connected(self, user_id: uuid.UUID) -> list[MailAccount]:
+        stmt = (
+            select(MailAccount)
+            .where(
+                MailAccount.user_id == user_id,
+                MailAccount.status != ConnectionStatus.DISCONNECTED.value,
+            )
+            .order_by(MailAccount.created_at)
+        )
+        return list(self.db.execute(stmt).scalars())
+
     def connected_count(self, user_id: uuid.UUID) -> int:
         return int(
             self.db.execute(

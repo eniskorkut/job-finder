@@ -32,16 +32,6 @@ class SyncService:
             items.append(item)
         return Page.build(items, total, page, page_size)
 
-    def trigger(self, user: User) -> None:
-        """Scanning depends on phase 2 (mail) and phase 3 (LLM + Telegram)."""
-        accounts = self.accounts.list_for_user(user.id)
-        raise errors.not_implemented(
-            "phase-2",
-            "Otomatik tarama henüz geliştirilmedi. "
-            f"(Bu hesapta tanımlı e-posta hesabı sayısı: {len(accounts)}). "
-            "2. aşamada Gmail/Hotmail okuma, 3. aşamada DeepSeek skorlaması eklenecek.",
-        )
-
 
 class NotificationService:
     def __init__(self, db: Session) -> None:

@@ -35,6 +35,9 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint(
             "user_id", "source", "external_id", name="uq_jobs_owner_source_external"
         ),
+        UniqueConstraint(
+            "user_id", "fingerprint_hash", name="uq_jobs_owner_fingerprint"
+        ),
         Index("ix_jobs_user_discovered", "user_id", "discovered_at"),
     )
 
@@ -57,6 +60,14 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     salary_text: Mapped[str | None] = mapped_column(String(160), default=None)
     description: Mapped[str | None] = mapped_column(Text, default=None)
     url: Mapped[str | None] = mapped_column(String(600), default=None)
+
+    # Deduplication keys. Priority: LinkedIn job id (external_id) -> normalized
+    # URL -> fingerprint of title/company/location. Only ever scoped per user.
+    url_normalized: Mapped[str | None] = mapped_column(String(600), default=None)
+    fingerprint_hash: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    description_status: Mapped[str] = mapped_column(
+        String(30), default="ok", server_default="ok"
+    )
 
     posted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None

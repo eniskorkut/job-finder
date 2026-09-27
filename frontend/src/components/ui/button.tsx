@@ -10,12 +10,12 @@ type Size = "sm" | "md" | "lg" | "icon";
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-accent text-white shadow-[var(--shadow-card)] hover:bg-accent-hover dark:text-[oklch(0.16_0.01_264)]",
+    "bg-accent text-white shadow-[var(--shadow-card)] pointer-hover:bg-accent-hover dark:text-[oklch(0.16_0.01_264)]",
   secondary:
-    "bg-surface text-ink shadow-[var(--shadow-card)] hover:bg-surface-hover hover:shadow-[var(--shadow-card-hover)]",
-  ghost: "text-ink-muted hover:bg-surface-muted hover:text-ink",
-  danger: "bg-danger text-white hover:brightness-95",
-  success: "bg-success text-white hover:brightness-95",
+    "bg-surface text-ink shadow-[var(--shadow-card)] pointer-hover:bg-surface-hover pointer-hover:shadow-[var(--shadow-card-hover)]",
+  ghost: "text-ink-muted pointer-hover:bg-surface-muted pointer-hover:text-ink",
+  danger: "bg-danger text-white pointer-hover:brightness-95",
+  success: "bg-success text-white pointer-hover:brightness-95",
 };
 
 const sizes: Record<Size, string> = {

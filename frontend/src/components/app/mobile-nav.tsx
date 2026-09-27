@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -17,18 +17,27 @@ export function MobileNav({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    if (!open) return;
+    panelRef.current?.focus();
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      triggerRef.current?.focus();
+    };
+  }, [open]);
 
   return (
     <div className={cn("lg:hidden", className)}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Menüyü aç"
@@ -49,13 +58,16 @@ export function MobileNav({
       />
 
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="Ana menü"
+        tabIndex={-1}
+        inert={!open}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-1 overflow-y-auto bg-surface p-4",
-          "transition-[translate] duration-300",
-          open ? "translate-x-0" : "-translate-x-full",
+          "fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-1 overflow-y-auto bg-surface p-4 outline-none",
+          "transition-[translate,opacity] duration-300",
+          open ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0",
         )}
         style={{ transitionTimingFunction: "var(--ease-drawer)" }}
       >

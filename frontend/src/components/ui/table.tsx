@@ -43,7 +43,7 @@ export function TR({
   return (
     <tr
       className={cn(
-        "transition-colors duration-150 ease-out hover:bg-surface-muted",
+        "transition-colors duration-150 ease-out pointer-hover:bg-surface-muted",
         className,
       )}
       {...props}

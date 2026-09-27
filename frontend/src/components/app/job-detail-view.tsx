@@ -173,7 +173,7 @@ export function JobDetailView({ jobId }: { jobId: string }) {
                 href={data.url}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-ink underline-offset-4 hover:underline"
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-ink underline-offset-4 pointer-hover:underline"
               >
                 İlan kaynağını aç
                 <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />

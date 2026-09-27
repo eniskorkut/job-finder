@@ -62,7 +62,7 @@ export function HistoryView() {
                 aria-pressed={active}
                 onClick={() => setTab(item.value)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-[var(--radius-control)] px-3 py-1.5 text-[12.5px] font-medium",
+                  "inline-flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 text-[12.5px] font-medium",
                   "transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.96]",
                   active
                     ? "bg-surface text-ink shadow-[var(--shadow-card)]"
@@ -115,7 +115,7 @@ export function HistoryView() {
             <CardContent className="pt-4">
               <Table>
                 <THead>
-                  <TR className="hover:bg-transparent">
+                  <TR className="pointer-hover:bg-transparent">
                     <TH>Tarih</TH>
                     <TH>Kaynak</TH>
                     <TH>Hesap</TH>
@@ -189,7 +189,7 @@ export function HistoryView() {
           <CardContent className="pt-4">
             <Table>
               <THead>
-                <TR className="hover:bg-transparent">
+                <TR className="pointer-hover:bg-transparent">
                   <TH>Tarih</TH>
                   <TH>Kanal</TH>
                   <TH>İlan</TH>

@@ -147,9 +147,9 @@ oturumdan belirlenir.
 
 Etkileşimli dokümantasyon: http://localhost:8000/docs
 
-**Aşama 1'de gerçekten çalışanlar:** kullanıcı yönetimi, oturum, davet akışı, tercihler, CV
-yükleme/indirme, mock ilan listeleme/filtreleme/durum güncelleme, tarama ve bildirim geçmişi
-okuma, dashboard özeti.
+**Aşama 1'de gerçekten çalışanlar:** kullanıcı yönetimi, oturum, parola değiştirme, davet akışı,
+tercihler, CV yükleme/indirme, mock ilan listeleme/filtreleme/durum güncelleme, tarama ve bildirim
+geçmişi okuma, dashboard özeti.
 
 **Aşama 2/3 uçları** (`connect`, `telegram/link`, `sync/run`, `notifications/test`) sahte başarı
 döndürmez; `501 Not Implemented` ve hangi aşamada geleceğini söyleyen bir mesaj döner. Aynı şekilde
@@ -207,14 +207,14 @@ sütun yok. `DATABASE_URL` değerini PostgreSQL'e çevirmek yeterlidir.
 
 ### Oluşturulan dosyalar
 
-- **Backend (54 dosya):** `app/` altında api (8 router + deps), core (5), db (2), models (11),
-  schemas (9), repositories (10), services (9), integrations (6), `main.py`, `cli.py`, `seed.py`;
-  `alembic/` (env + `0001_initial_schema`); `tests/` (7 dosya, 63 test); `pyproject.toml`;
+- **Backend:** `app/` altında 71 Python modülü (8 API router + deps, core 5, db 2, models 11,
+  schemas 9, repositories 10, services 9, integrations 6, `main.py`, `cli.py`, `seed.py`);
+  `alembic/` (env + `0001_initial_schema`); 9 test dosyası (63 test); `pyproject.toml`;
   `.env.example`.
-- **Frontend (37 dosya):** 9 sayfa/route (dashboard, iş ilanları, ilan detayı, CV ve tercihler,
-  entegrasyonlar, tarama geçmişi, davetler, giriş, davet kabul), `src/proxy.ts`, 10 UI bileşeni,
-  11 uygulama bileşeni, api istemcisi/tipler/hook'lar, 6 test dosyası (25 test), yapılandırma
-  dosyaları (`next.config.ts`, `tailwind` v4, `vitest.config.ts`, `tsconfig.json`).
+- **Frontend:** 9 sayfa/route (dashboard, iş ilanları, ilan detayı, CV ve tercihler,
+  entegrasyonlar, tarama geçmişi, davetler, giriş, davet kabul), 30 bileşen (10 UI + 20 uygulama),
+  `src/proxy.ts`, api istemcisi/tipler/hook'lar, 7 test dosyası (28 test), yapılandırma dosyaları
+  (`next.config.ts`, Tailwind 4, `vitest.config.ts`, `tsconfig.json`).
 - **Kök:** `README.md`, `.gitignore` (`.env.local`, `*.db`, `backend/data/`, `node_modules`,
   `.next` hariç tutulur).
 
@@ -224,7 +224,7 @@ sütun yok. `DATABASE_URL` değerini PostgreSQL'e çevirmek yeterlidir.
 | --- | --- | --- |
 | Backend testleri | `pytest` | **63 passed** |
 | Migration (up/down/check) | `alembic upgrade head && alembic check && alembic downgrade base` | Başarılı, model-şema farkı yok |
-| Frontend birim testleri | `npm test` | **25 passed** (6 dosya) |
+| Frontend birim testleri | `npm test` | **28 passed** (7 dosya) |
 | Tip kontrolü | `npm run typecheck` | Hatasız |
 | Üretim derlemesi | `npm run build` | Başarılı (9 route + proxy) |
 | Uçtan uca (localhost) | curl + backend 8010 / frontend 3010 | Aşağıdaki senaryolar |

@@ -117,7 +117,7 @@ function SegmentedControl({
             }
             className={cn(
               // concentric: 16px outer - 4px padding = 12px inner
-              "rounded-[var(--radius-control)] px-3 py-1.5 text-[12.5px] font-medium",
+              "rounded-[12px] px-3 py-1.5 text-[12.5px] font-medium",
               "transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.96]",
               active
                 ? "bg-surface text-ink shadow-[var(--shadow-card)]"

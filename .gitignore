@@ -33,3 +33,6 @@ next-env.d.ts
 .idea/
 .vscode/
 *.swp
+
+# Next.js 16 writes CLAUDE.md on every `next dev` run; AGENTS.md is tracked instead.
+frontend/CLAUDE.md

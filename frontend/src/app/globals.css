@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Hover feedback only where a real pointer exists: touch devices fire :hover
+   on tap, which produces false positives. */
+@custom-variant pointer-hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   Design tokens (Better UI)
+   - surfaces carry depth through layered transparent shadows in light
+     mode and a single white ring in dark mode
+   - radii are chosen concentrically: outer = inner + padding
+------------------------------------------------------------------ */
+:root {
+  --canvas: oklch(0.986 0.002 264);
+  --surface: oklch(1 0 0);
+  --surface-muted: oklch(0.972 0.004 264);
+  --surface-hover: oklch(0.958 0.005 264);
+  --ink: oklch(0.21 0.012 264);
+  --ink-muted: oklch(0.52 0.012 264);
+  --ink-subtle: oklch(0.63 0.01 264);
+  --line: oklch(0.21 0.012 264 / 0.12);
+  --line-strong: oklch(0.21 0.012 264 / 0.2);
+  --accent: oklch(0.52 0.17 268);
+  --accent-hover: oklch(0.47 0.17 268);
+  --accent-soft: oklch(0.52 0.17 268 / 0.1);
+  --accent-ink: oklch(0.42 0.16 268);
+  --success: oklch(0.55 0.14 156);
+  --success-soft: oklch(0.55 0.14 156 / 0.12);
+  --warning: oklch(0.64 0.15 76);
+  --warning-soft: oklch(0.64 0.15 76 / 0.14);
+  --danger: oklch(0.55 0.2 25);
+  --danger-soft: oklch(0.55 0.2 25 / 0.12);
+  --info: oklch(0.55 0.13 235);
+  --info-soft: oklch(0.55 0.13 235 / 0.12);
+
+  --shadow-card:
+    0px 0px 0px 1px oklch(0 0 0 / 0.06),
+    0px 1px 2px -1px oklch(0 0 0 / 0.06),
+    0px 2px 4px 0px oklch(0 0 0 / 0.04);
+  --shadow-card-hover:
+    0px 0px 0px 1px oklch(0 0 0 / 0.09),
+    0px 2px 4px -2px oklch(0 0 0 / 0.08),
+    0px 6px 12px -4px oklch(0 0 0 / 0.06);
+  --shadow-pop:
+    0px 0px 0px 1px oklch(0 0 0 / 0.07),
+    0px 8px 24px -8px oklch(0 0 0 / 0.18);
+}
+
+.dark {
+  --canvas: oklch(0.175 0.008 264);
+  --surface: oklch(0.222 0.009 264);
+  --surface-muted: oklch(0.256 0.009 264);
+  --surface-hover: oklch(0.285 0.009 264);
+  --ink: oklch(0.97 0.003 264);
+  --ink-muted: oklch(0.75 0.008 264);
+  --ink-subtle: oklch(0.63 0.008 264);
+  --line: oklch(1 0 0 / 0.12);
+  --line-strong: oklch(1 0 0 / 0.2);
+  --accent: oklch(0.68 0.15 268);
+  --accent-hover: oklch(0.73 0.15 268);
+  --accent-soft: oklch(0.68 0.15 268 / 0.16);
+  --accent-ink: oklch(0.82 0.1 268);
+  --success: oklch(0.72 0.13 156);
+  --success-soft: oklch(0.72 0.13 156 / 0.16);
+  --warning: oklch(0.79 0.13 76);
+  --warning-soft: oklch(0.79 0.13 76 / 0.16);
+  --danger: oklch(0.68 0.17 25);
+  --danger-soft: oklch(0.68 0.17 25 / 0.16);
+  --info: oklch(0.72 0.11 235);
+  --info-soft: oklch(0.72 0.11 235 / 0.16);
+
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --shadow-card-hover: 0 0 0 1px oklch(1 0 0 / 0.14);
+  --shadow-pop:
+    0 0 0 1px oklch(1 0 0 / 0.1),
+    0 12px 32px -12px oklch(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-inner: 6px;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
+  --shadow-pop: var(--shadow-pop);
+
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* Built-in easings are too weak for UI work. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Numeric data should not jitter while polling. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Staged entrance for infrequent first loads (page hero, empty states).
+     Split content into semantic chunks and stagger ~100ms. Never used for
+     routine interactions such as row hovers or keystrokes. */
+  .stagger > * {
+    animation: enter-up 400ms var(--ease-out) backwards;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 80ms; }
+  .stagger > *:nth-child(3) { animation-delay: 160ms; }
+  .stagger > *:nth-child(4) { animation-delay: 240ms; }
+  .stagger > *:nth-child(5) { animation-delay: 320ms; }
+  .stagger > *:nth-child(n + 6) { animation-delay: 400ms; }
+
+  /* Soft exit: shorter than the enter and with a small fixed offset, so it
+     reads as "went away" instead of stealing focus. */
+  .exiting {
+    opacity: 0;
+    translate: 0 -8px;
+    filter: blur(2px);
+    transition-property: opacity, translate, filter;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-out);
+    pointer-events: none;
+  }
+}
+
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    filter: blur(0);
+  }
+}

@@ -1,0 +1,35 @@
+# --- Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Local databases & user data ---------------------------------------
+# Never commit user data (CVs, OAuth tokens, scan history).
+backend/*.db
+backend/*.db-journal
+backend/data/
+
+# --- Secrets ------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+!*.env.example
+
+# --- Node / Next.js -----------------------------------------------------
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Editors / OS -------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp

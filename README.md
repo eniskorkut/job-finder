@@ -3,13 +3,14 @@
 İki kullanıcının kendi e-posta hesaplarına gelen LinkedIn iş ilanlarını toplayıp CV'leriyle
 eşleştirdiği ve uygun ilanları Telegram üzerinden aldığı web uygulaması.
 
-**Durum: Aşama 1/3 tamamlandı** — temel mimari, kullanıcı yönetimi, veritabanı, API ve frontend.
+**Durum: Aşama 2/3 tamamlandı** — panelden kişisel OAuth, e-posta taraması, ilan çıkarımı,
+CV metin çıkarımı ve dayanıklı manuel tarama.
 
 | Aşama | Kapsam | Durum |
 | --- | --- | --- |
 | 1 | Mimari, kullanıcı yönetimi, oturum/CSRF, tercihler, CV yükleme, mock ilanlar, dashboard | ✅ tamamlandı |
-| 2 | Gmail + Hotmail/Outlook OAuth, e-posta okuma, CV metin çıkarımı | ⏳ |
-| 3 | DeepSeek V4.1 Flash skorlama, Telegram bildirimi, otomatik tarama | ⏳ |
+| 2 | Gmail + Hotmail/Outlook OAuth (kullanıcı bazlı istemci), e-posta okuma, ilan ayrıştırma, tekilleştirme, CV metin çıkarımı, kalıcı tarama kuyruğu | ✅ tamamlandı |
+| 3 | DeepSeek V4.1 Flash skorlama, Telegram bildirimi, otomatik zamanlayıcı | ⏳ |
 
 - **Backend:** FastAPI + SQLAlchemy 2 + Alembic + SQLite → http://localhost:8000
 - **Frontend:** Next.js 16 + TypeScript + Tailwind CSS 4 (Better UI ilkeleri) → http://localhost:3000
@@ -96,17 +97,29 @@ gerçek ilan olmadıkları her ekranda açıkça belirtilir.
 
 ### 6) Sunucuları başlat
 
+Tarama işlerini işleyen **ayrı bir worker süreci** gerekir (API yalnızca kuyruğa alır):
+
 ```bash
-# backend
+# 1) backend API
 cd backend && source .venv/bin/activate
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 
-# frontend (yeni terminal)
+# 2) tarama worker'ı (ayrı terminal, sürekli çalışır)
+cd backend && source .venv/bin/activate
+python -m app.worker                 # kuyruğu sürekli dinler
+python -m app.worker --once          # tek iş işleyip çıkar (geliştirme/test)
+python -m app.worker --poll-seconds 1 --verbose
+
+# 3) frontend (üçüncü terminal)
 cd frontend
 npm install
 cp .env.example .env.local     # BACKEND_URL=http://localhost:8000
 npm run dev                    # http://localhost:3000
 ```
+
+Worker süreci çalışmıyorsa "Şimdi Tara" işi kuyrukta bekler; arayüz bunu açıkça söyler
+("İş kuyrukta. İşçi süreci çalışmıyorsa: python -m app.worker").
 
 Frontend tarayıcıdan gelen `/api/v1/*` isteklerini `BACKEND_URL` adresine proxy'ler; böylece
 oturum çerezi birinci taraf olur ve CORS gerekmez.
@@ -128,6 +141,57 @@ npm run build             # üretim derlemesi
 
 Ayrıntılı sonuçlar için aşağıdaki **Aşama 1 raporu** bölümüne bakın.
 
+## Gmail bağlantısı (kullanıcı kendi OAuth uygulamasını kurar)
+
+Her kullanıcı **kendi** Google OAuth istemcisini panele girip kendi Gmail hesabını bağlar.
+Paylaşılan bir Google uygulaması yoktur; client secret kullanıcı bazında `APP_ENCRYPTION_KEY`
+ile şifrelenerek saklanır ve bir daha düz metin gösterilmez.
+
+1. <https://console.cloud.google.com> üzerinde bir proje açın.
+2. **APIs & Services → Library → Gmail API → Enable**.
+3. **OAuth consent screen**: External; test aşamasında *Test users* listesine bağlayacağınız
+   Gmail adresini ekleyin. Scope: `https://www.googleapis.com/auth/gmail.readonly`
+   (+ `openid`, `email` hesap adını doğrulamak için).
+4. **Credentials → Create credentials → OAuth client ID → Web application**.
+5. **Authorized redirect URIs** alanına birebir şunu ekleyin:
+   `http://localhost:8000/api/v1/integrations/gmail/callback`
+6. Client ID ve Client Secret değerlerini **Entegrasyonlar** sayfasındaki forma kaydedin,
+   ardından **Gmail ile bağlan** düğmesine basın.
+
+Notlar:
+
+- Uygulama *Testing* modundayken Google refresh token'ı **7 gün** sonra geçersiz olur;
+  hesabı "Yeniden yetkilendir" ile tazeleyin (arayüz bunu `needs_reauth` olarak gösterir).
+- Yalnızca okuma izni istenir; **e-posta parolası hiçbir zaman istenmez ve saklanmaz**.
+- `localhost` ile `127.0.0.1` karıştırılmamalıdır: uygulamanın adresi
+  `http://localhost:3000`, callback adresi `http://localhost:8000/...` olmalıdır. Çerez
+  alan adı `localhost` için yazıldığından callback sırasında oturum taşınır.
+- Aynı istemci bilgileriyle **birden fazla Gmail hesabı** eklenebilir (hesap başına ayrı kart,
+  ayrı filtre ve ayrı tarama checkpoint'i).
+
+## Hotmail / Outlook bağlantısı (Microsoft Entra)
+
+1. <https://entra.microsoft.com> → **Entra ID → App registrations → New registration**.
+2. **Supported account types**: kişisel Microsoft hesapları dahil olan seçenek
+   (*Accounts in any organizational directory and personal Microsoft accounts*).
+3. **Authentication → Add a platform → Web** ve redirect URI olarak birebir:
+   `http://localhost:8000/api/v1/integrations/outlook/callback`
+4. **Certificates & secrets → New client secret**; değeri forma girin
+   (kiracı alanı kişisel hesaplar için `consumers`).
+5. **API permissions → Microsoft Graph → Delegated**: `Mail.Read`, `User.Read`
+   (`offline_access` otomatik eklenir).
+
+Notlar:
+
+- MSAL **confidential client** akışı kullanılır: gizli anahtar uygulamayı doğruladığı için
+  PKCE gerekmez (MSAL bu istemci türünde desteklemez); state + oturum eşleşmesi ile CSRF
+  korunur.
+- Token yenileme MSAL'in şifrelenmiş token cache'i üzerinden `acquire_token_silent` ile yapılır;
+  cache de `APP_ENCRYPTION_KEY` ile şifreli saklanır.
+- Artımlı tarama `deltaLink` ile yapılır; geçersiz delta bağlantısında (410/404) iş
+  kullanıcıya hata göstermek yerine sınırlı yeniden tarama yapar ve checkpoint'i yeniler.
+- Client secret süresi dolduğunda aynı formdan yeni secret girip yeniden bağlanın.
+
 ## API
 
 Tüm uçlar `/api/v1` altındadır. Kimlik doğrulama **HTTP-only oturum çerezi** (`jh_session`) ile
@@ -139,21 +203,38 @@ oturumdan belirlenir.
 | `/auth` | `GET /csrf`, `POST /login`, `POST /logout`, `GET /session`, `POST /password`, `GET/POST /invitations`, `DELETE /invitations/{id}`, `GET /invitations/{token}/inspect`, `POST /invitations/accept`, `GET /users` (owner) |
 | `/me` | `GET`, `PATCH`, `GET /overview` |
 | `/preferences` | `GET`, `PUT` |
-| `/cvs` | `GET`, `POST` (dosya), `GET/PATCH/DELETE /{id}`, `GET /{id}/download` |
+| `/cvs` | `GET`, `POST` (dosya), `GET/PATCH/DELETE /{id}`, `GET /{id}/download`, `GET /{id}/preview` (çıkarılan metin), `POST /{id}/extract` |
 | `/jobs` | `GET`, `GET /stats`, `GET /filters`, `GET /{id}`, `PATCH /{id}` (durum) |
-| `/integrations` | `GET`, `POST /{provider}/connect`, `DELETE /{provider}/accounts/{id}`, `GET /telegram/status`, `POST /telegram/link`, `DELETE /telegram` |
-| `/sync` | `GET /history`, `GET /status`, `POST /run` |
+| `/integrations` | `GET`, `PUT/DELETE /{provider}/client` (kendi OAuth uygulamanız), `POST /{provider}/connect`, `GET /{provider}/callback`, `GET /accounts`, `PATCH /accounts/{id}` (filtreler), `POST /accounts/{id}/test`, `POST /accounts/{id}/reconnect`, `DELETE /accounts/{id}` (bağlantıyı kes), `DELETE /accounts/{id}/purge`, `GET /telegram/status`, `POST /telegram/link`, `DELETE /telegram` |
+| `/sync` | `POST /run` (**202 + job_id**), `GET /jobs`, `GET /jobs/{id}` (ilerleme), `POST /jobs/{id}/cancel`, `GET /history`, `GET /status` |
 | `/notifications` | `GET`, `POST /test` |
 
 Etkileşimli dokümantasyon: http://localhost:8000/docs
 
-**Aşama 1'de gerçekten çalışanlar:** kullanıcı yönetimi, oturum, parola değiştirme, davet akışı,
-tercihler, CV yükleme/indirme, mock ilan listeleme/filtreleme/durum güncelleme, tarama ve bildirim
-geçmişi okuma, dashboard özeti.
+**Aşama 2'de gerçekten çalışanlar:** kullanıcı bazlı Gmail/Microsoft OAuth istemci kaydı ve
+yetkilendirme akışı, hesap listesi/filtreleri/test/yeniden bağlama/bağlantı kesme, e-posta
+taraması (ilk pencere + artımlı cursor), LinkedIn ilanı ayrıştırma ve tekilleştirme, CV metin
+çıkarımı + önizleme, kalıcı tarama kuyruğu ve canlı ilerleme.
 
-**Aşama 2/3 uçları** (`connect`, `telegram/link`, `sync/run`, `notifications/test`) sahte başarı
-döndürmez; `501 Not Implemented` ve hangi aşamada geleceğini söyleyen bir mesaj döner. Aynı şekilde
-DeepSeek entegrasyonu "etkin değil" olarak raporlanır.
+**Aşama 3 uçları** (`telegram/link`, `notifications/test`) sahte başarı döndürmez;
+`501 Not Implemented` ve hangi aşamada geleceğini söyleyen bir mesaj döner. DeepSeek yalnızca
+"yapılandırıldı/yapılandırılmadı" olarak raporlanır, anahtar değeri asla döndürülmez.
+
+### Tarama davranışı
+
+- `POST /sync/run` anında döner (**202**) ve kalıcı bir iş kaydı oluşturur; UI `GET /sync/jobs/{id}`
+  ile ilerlemeyi yoklar. Aynı kullanıcı için ikinci tarama **409** ile reddedilir (çift tıklama koruması).
+- İlk tarama sınırlıdır: `SYNC_INITIAL_WINDOW_DAYS` (varsayılan 7 gün) ve
+  `SYNC_INITIAL_MAX_MESSAGES` (100). Geçmişin tamamı yalnızca açıkça istenirse taranır.
+- Artımlı tarama Gmail'de `users.history.list` + `historyId`, Outlook'ta `deltaLink` ile yapılır;
+  cursor yalnızca sayfa kalıcı olarak kaydedildikten sonra ilerler.
+- Eşzamanlılık: toplam `SYNC_MAX_ACTIVE_MAILBOXES` (4) posta kutusu, posta kutusu başına
+  `SYNC_MAILBOX_CONCURRENCY` (2) ağ isteği. 429/5xx için `Retry-After` öncelikli, jitter'lı
+  üstel geri çekilme uygulanır.
+- İdempotency: her mesaj `processed_messages` defterine yazılır; aynı mesaj ve aynı ilan ikinci
+  kez çoğalmaz. Bir posta kutusu hata verirse diğerleri taranmaya devam eder (kısmi başarı).
+- Worker çökerse kira (lease) süresi dolar; iş yeniden kuyruğa alınır ve `attempt` sınırına
+  ulaşınca dürüstçe `failed` olur.
 
 ## Mimari
 
@@ -164,14 +245,18 @@ backend/
     core/          config, security (Argon2id), crypto (Fernet), rate_limit, errors
     db/            SQLAlchemy 2 Base + engine/session
     models/        users, sessions, invitations, user_preferences, cvs, mail_accounts,
-                   jobs, job_matches, telegram_integrations, sync_history,
-                   notification_history, oauth_states
+                   oauth_client_configs, oauth_states, jobs, job_matches, job_sources,
+                   sync_jobs, sync_job_accounts, sync_checkpoints, processed_messages,
+                   sync_history, notification_history, telegram_integrations
     repositories/  her sorgu user_id ile kapsanır
-    services/      auth, invitation, user, preference, cv, job, integration, sync, notification
-    integrations/  Gmail, Microsoft Graph, DeepSeek, Telegram arayüzleri (Aşama 2/3 sözleşmeleri)
+    services/      auth, invitation, user, preference, cv, job, job_ingest, mail_scan,
+                   sync_job, oauth, integration, sync, notification
+    integrations/  gmail.py (Gmail REST), outlook.py (MSAL + Graph), http.py (retry/host
+                   allowlist), cv_extraction.py, parsing/ (MIME, LinkedIn, dedupe, filters)
+    worker.py      kalıcı tarama kuyruğunu işleyen ayrı süreç (python -m app.worker)
     cli.py         create-user, invite, list-users, list-invitations, seed, status
-  alembic/         0001_initial_schema
-  tests/           63 test
+  alembic/         0001_initial_schema + 0002_email_sync_oauth_clients
+  tests/           180 test / 13 dosya
 
 frontend/
   src/app/         (app)/ dashboard, jobs, jobs/[id], preferences, integrations, history, team
@@ -192,8 +277,12 @@ frontend/
 - **Sahiplik:** Bütün kullanıcıya özel tablolarda `user_id` bulunur; repository katmanı her sorguya
   `user_id` filtresi ekler. Başka bir kullanıcının UUID'si bilinse bile kayıt **404** döner
   (varlık sızdırılmaz). Testler bunu ayrıca doğrular.
-- **Şifreleme:** OAuth token'ları ve bot token'ları için `APP_ENCRYPTION_KEY` ile Fernet altyapısı
-  hazır (Aşama 2'de kullanılacak).
+- **Şifreleme:** Kullanıcının OAuth istemci secret'ı, access/refresh token'ları ve MSAL token
+  cache'i `APP_ENCRYPTION_KEY` ile Fernet kullanılarak şifrelenir; hiçbiri frontend'e dönmez.
+- **OAuth güvenliği:** Tek kullanımlık state (10 dk TTL) + oturuma bağlama + Gmail'de PKCE (S256);
+  callback farklı oturum/kullanıcı ile tamamlanamaz. Sağlayıcı continuation linkleri yalnızca
+  izinli host listesine (`graph.microsoft.com` vb.) kabul edilir; token yabancı adrese gönderilmez.
+- **Log hijyeni:** Secret, OAuth kodu, tam CV metni ve ham posta gövdesi loglanmaz.
 - **Kişiye özel vs ortak:** Gmail, Hotmail ve Telegram ayarları kullanıcıya özeldir; DeepSeek
   anahtarı dağıtım genelinde ortaktır (`.env.local`).
 
@@ -203,62 +292,87 @@ SQLite kullanılır ancak şema PostgreSQL'e geçişi destekler: yalnızca taş�
 (`Uuid`, `String`, `Text`, `Integer`, `Boolean`, `JSON`, `DateTime(timezone=True)`), SQLite'a özel
 sütun yok. `DATABASE_URL` değerini PostgreSQL'e çevirmek yeterlidir.
 
-## Aşama 1 raporu
+## Aşama 2'de eklenen dosyalar
 
-### Oluşturulan dosyalar
+**Backend (yeni)**: `app/models/oauth_client.py`, `app/models/sync_job.py`,
+`app/repositories/oauth_clients.py`, `app/repositories/sync_jobs.py`,
+`app/services/oauth_service.py`, `app/services/mail_scan_service.py`,
+`app/services/sync_job_service.py`, `app/services/job_ingest_service.py`,
+`app/integrations/http.py`, `app/integrations/errors.py`, `app/integrations/cv_extraction.py`,
+`app/integrations/parsing/{mime,linkedin,dedupe,filters}.py`, `app/worker.py`,
+`alembic/versions/0002_email_sync_oauth_clients.py`.
 
-- **Backend:** `app/` altında 71 Python modülü (8 API router + deps, core 5, db 2, models 11,
-  schemas 9, repositories 10, services 9, integrations 6, `main.py`, `cli.py`, `seed.py`);
-  `alembic/` (env + `0001_initial_schema`); 9 test dosyası (63 test); `pyproject.toml`;
-  `.env.example`.
-- **Frontend:** 9 sayfa/route (dashboard, iş ilanları, ilan detayı, CV ve tercihler,
-  entegrasyonlar, tarama geçmişi, davetler, giriş, davet kabul), 30 bileşen (10 UI + 20 uygulama),
-  `src/proxy.ts`, api istemcisi/tipler/hook'lar, 7 test dosyası (28 test), yapılandırma dosyaları
-  (`next.config.ts`, Tailwind 4, `vitest.config.ts`, `tsconfig.json`).
-- **Kök:** `README.md`, `.gitignore` (`.env.local`, `*.db`, `backend/data/`, `node_modules`,
-  `.next` hariç tutulur).
+**Backend (güncellenen)**: `app/integrations/{gmail,outlook,base}.py` (gerçek istemciler),
+`app/api/v1/{integrations,sync,cvs}.py`, `app/services/{cv,integration,user,sync}_service.py`,
+`app/models/{job,mail_account,oauth,cv}.py`, `app/core/config.py`, `app/db/session.py` (WAL).
 
-### Doğrulama sonuçları
+**Testler (yeni)**: `tests/fakes.py`, `tests/fixtures/emails.py`, `tests/test_oauth_flow.py` (22),
+`tests/test_scan_pipeline.py` (15), `tests/test_sync_jobs.py` (17), `tests/test_cv_extraction.py` (20),
+`tests/test_linkedin_parsing.py` (28), `tests/test_http_retry.py` (13).
+
+**Frontend**: `src/components/app/sync-panel.tsx` (+test), `integrations-view.tsx` (yeniden yazıldı,
++test), `cv-manager.tsx` (önizleme, +test), `dashboard-view.tsx`, `history-view.tsx` (tarama işleri
+sekmesi), `src/lib/types.ts`.
+
+## Doğrulama sonuçları
 
 | Kontrol | Komut | Sonuç |
 | --- | --- | --- |
-| Backend testleri | `pytest` | **63 passed** |
-| Migration (up/down/check) | `alembic upgrade head && alembic check && alembic downgrade base` | Başarılı, model-şema farkı yok |
-| Frontend birim testleri | `npm test` | **28 passed** (7 dosya) |
+| Backend testleri | `pytest` | **180 passed** (13 dosya; Aşama 1: 65, Aşama 2: 115) |
+| Migration (up/check) | `alembic upgrade head && alembic check` | 0002 uygulanır, model-şema farkı yok |
+| Frontend birim testleri | `npm test` | **48 passed** (10 dosya) |
 | Tip kontrolü | `npm run typecheck` | Hatasız |
 | Üretim derlemesi | `npm run build` | Başarılı (9 route + proxy) |
-| Uçtan uca (localhost) | curl + backend 8010 / frontend 3010 | Aşağıdaki senaryolar |
+| Worker | `python -m app.worker --once` | Kuyruk boşken temiz çıkış; kuyrukta iş varken işi işler |
 
-Uçtan uca doğrulanan senaryolar:
+Uçtan uca doğrulanan senaryolar (localhost; API 8010, frontend 3010 — 8000/3000 başka servislerce
+kullanıldığı için):
 
 1. `ai_hunter` giriş yapar → **7** ilan görür; `data_hunter` giriş yapar → **6** ilan görür.
 2. `data_hunter`, `ai_hunter`'ın ilan UUID'sini bilse bile `GET /api/v1/jobs/{id}` → **404**.
-3. Üye kullanıcı `GET /api/v1/auth/invitations` → **403** (owner-only).
-4. Çerezsiz `GET /api/v1/me` → **401**; CSRF başlığı olmadan `POST /auth/logout` → **403**.
-5. `POST /api/v1/sync/run` → **501** + "henüz geliştirilmedi" mesajı (sahte başarı yok).
-6. Davet akışı: owner davet üretir → davet sayfası açılır → davetli kendi parolasıyla hesap
-   oluşturur → boş bir çalışma alanı görür (**0** ilan) → aynı bağlantı ikinci kez kullanılamaz
-   (**422**).
-7. Frontend: çerezsiz `/` → `/login` yönlendirmesi; giriş sonrası `/`, `/jobs`, `/preferences`,
-   `/integrations`, `/history`, `/team` → **200**; Next proxy'si üzerinden `/me/overview`
-   dashboard verisini döner.
+3. Üye kullanıcı `GET /api/v1/auth/invitations` → **403**; çerezsiz `GET /api/v1/me` → **401**;
+   CSRF başlığı olmadan `POST /auth/logout` → **403**.
+4. Davet akışı: davet üretilir → davetli kendi parolasıyla hesap açar → boş çalışma alanı görür →
+   aynı bağlantı ikinci kez kullanılamaz (**422**).
+5. **Panelden OAuth istemcisi:** sahte Client ID/Secret kaydedildi → API `configured: true`,
+   secret maskeli (`*************alue`) döndü, hiçbir yanıtta düz metin secret yok.
+6. **Yetkilendirme adresi:** `POST /integrations/gmail/connect` → gerçek
+   `https://accounts.google.com/o/oauth2/v2/auth` adresi; `redirect_uri` birebir
+   `http://localhost:8000/api/v1/integrations/gmail/callback`, `scope=gmail.readonly openid email`,
+   `code_challenge_method=S256`, `access_type=offline`, `prompt=consent`, 43 karakterlik tek
+   kullanımlık state.
+7. **CV metin çıkarımı:** gerçek PDF yüklendi → `extraction_status=ok`, önizleme metni ve
+   karakter/satır sayısı döndü (metin yalnızca sahibine görünür).
+8. **Worker + tarama:** `POST /sync/run` → **202 + job_id**; `python -m app.worker --once` işi
+   aldı, gerçek Gmail sorgusunu (`from:(linkedin.com) subject:(...) after:2026/09/20`) oluşturdu,
+   sahte token ile **401** aldı ve dürüstçe `failed` + hesap `needs_reauth` durumuna geçti.
+   Sahte başarı üretilmedi.
+9. Frontend: çerezsiz `/` → `/login`; giriş sonrası `/`, `/jobs`, `/preferences`, `/integrations`,
+   `/history`, `/team` → **200**; `/integrations` uçları doğru durumu döndürdü (gmail/outlook
+   `available=true`, telegram 3. aşama, DeepSeek `configured=true` ama anahtar değeri yok).
 
-### Bu aşamada yapılmayanlar (bilinçli)
+### Aşama 2'de yapılmayanlar (bilinçli)
 
-- Gerçek Gmail / Microsoft Graph / DeepSeek / Telegram çağrıları (Aşama 2-3) — arayüzler ve
-  veritabanı alanları hazır, uçlar dürüstçe 501 döner.
-- CV metin çıkarımı ve otomatik eşleştirme puanı — örnek puanlar `mock-fixture` model adıyla
-  işaretlidir.
-- LinkedIn scraping, n8n, Notion, Gemini, otomatik başvuru — kapsam dışı.
-- "Şimdi Tara" düğmesi 501 mesajını gösterir (tarama gerçekten yok).
+- **Gerçek OAuth bağlantısı test edilmedi:** gerçek Google/Microsoft anahtarları olmadığı için
+  canlı yetkilendirme ve gerçek Gmail/Graph okuması çalıştırılmadı. Akışın kendisi (state, PKCE,
+  redirect URI, token şifreleme, hata sınıfları, worker yürütmesi) sahte sağlayıcı istemcileri ve
+  gerçek HTTPS çağrısıyla doğrulandı; kullanıcı kendi istemci bilgilerini girip bağlandığında
+  canlı akış devreye girer.
+- DeepSeek skorlaması ve Telegram gönderimi yok (Aşama 3); ilan eşleşme puanı bu aşamada
+  hesaplanmaz, `job_matches.score` boş kalır.
+- OCR yok: taranmış PDF'ler `ocr_required` olarak işaretlenir, boş CV üretilmez.
+- Otomatik zamanlayıcı/cron yok: tarama yalnızca manuel tetiklenir.
 
 ### Bilinen sınırlar
 
 - Giriş rate limiti süreç içi (in-memory) tutulur; çok işçili dağıtımda Redis'e taşınmalıdır.
-- Frontend `proxy.ts` yalnızca çerez varlığına bakar; yetkilendirme her istekte API'de yapılır
-  (çerez değeri yalnızca bir ipucudur).
-- SMTP yapılandırılmadığı için davet bağlantıları e-posta ile gönderilmez, arayüz/CLI üzerinden
-  paylaşılır (Aşama 2'de e-posta gönderimi eklenebilir).
+- Worker kirası ve eşzamanlılık sınırları SQLite üzerinde tek süreç için tasarlandı; yatay
+  ölçekleme için PostgreSQL'e geçilmelidir (şema hazır).
+- LinkedIn e-posta şablonları sık değişir; ayrıştırıcı sezgiseldir ve testlerde üç farklı HTML
+  şablonu + düz metin + bozuk HTML ile doğrulanır. Yeni bir şablon geldiğinde ilan bulunamazsa
+  mesaj "0 ilan" olarak kaydedilir (hata değil), gönderen/konu filtreleri panelden güncellenir.
+- Frontend `proxy.ts` yalnızca çerez varlığına bakar; yetkilendirme her istekte API'de yapılır.
+- SMTP yok: davet bağlantıları arayüz/CLI üzerinden paylaşılır.
 
 ## Lisans
 

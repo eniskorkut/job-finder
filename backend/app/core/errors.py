@@ -39,7 +39,9 @@ def conflict(message: str) -> AppError:
 
 
 def validation_error(message: str) -> AppError:
-    return AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", message)
+    return AppError(
+        status.HTTP_422_UNPROCESSABLE_CONTENT, "validation_error", message
+    )
 
 
 def rate_limited(message: str, retry_after: int | None = None) -> AppError:

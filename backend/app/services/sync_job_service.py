@@ -6,9 +6,9 @@ import asyncio
 import logging
 import socket
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core import errors
@@ -22,7 +22,7 @@ from app.models.enums import (
 )
 from app.models.user import User
 from app.models.job import Job
-from app.models.sync_job import SyncJob, SyncJobAccount
+from app.models.sync_job import ScoringItem, SyncJob, SyncJobAccount
 from app.models.user import User
 from app.repositories.jobs import MailAccountRepository
 from app.repositories.sync_jobs import SyncJobAccountRepository, SyncJobRepository
@@ -198,6 +198,7 @@ class SyncRunner:
         llm_factory=None,
         telegram_factory=None,
         now: datetime | None = None,
+        clock_now: datetime | None = None,
     ) -> None:
         self.worker_id = worker_id or default_worker_id()
         self.session_factory = session_factory
@@ -205,12 +206,17 @@ class SyncRunner:
         self.llm_factory = llm_factory
         self.telegram_factory = telegram_factory
         self._now = now
+        self._explicit_clock_now = clock_now
+
+    def _clock_now(self) -> datetime:
+        return self._explicit_clock_now or datetime.now(timezone.utc)
 
     # --- queue handling -------------------------------------------------
     def recover(self) -> int:
         with self.session_factory() as session:
             recovered = SyncJobRepository(session).recover_expired_leases(
-                max_attempts=settings.sync_max_attempts
+                max_attempts=settings.sync_max_attempts,
+                now=self._clock_now(),
             )
             session.commit()
             if recovered:
@@ -222,7 +228,10 @@ class SyncRunner:
     def claim(self) -> uuid.UUID | None:
         with self.session_factory() as session:
             job = SyncJobRepository(session).claim_next(
-                worker_id=self.worker_id, lease_seconds=settings.sync_lease_seconds
+                worker_id=self.worker_id,
+                lease_seconds=settings.sync_lease_seconds,
+                max_attempts=settings.sync_max_attempts,
+                now=self._clock_now(),
             )
             session.commit()
             return job.id if job else None
@@ -232,6 +241,7 @@ class SyncRunner:
         """Dispatch one durable job to its stage: mail scan, scoring, notify."""
         heartbeat = asyncio.create_task(self._heartbeat_loop(job_id))
         registered = False
+        exec_error: str | None = None
         try:
             with self.session_factory() as session:
                 job = session.get(SyncJob, job_id)
@@ -244,6 +254,9 @@ class SyncRunner:
                 status = await self._execute_mail_scan(job_id)
             registered = True
             return status
+        except Exception as exc:
+            exec_error = f"Beklenmeyen yürütme hatası ({type(exc).__name__}): {exc}"
+            raise
         finally:
             heartbeat.cancel()
             try:
@@ -251,8 +264,8 @@ class SyncRunner:
             except asyncio.CancelledError:
                 pass
             if not registered:
-                # If execution crashed or was cancelled before finishing, release job for lease recovery
-                self._release_job(job_id)
+                # If execution crashed or was cancelled before finishing, release job for bounded retry
+                self._release_job(job_id, error=exec_error)
 
     async def _execute_scoring(self, job_id: uuid.UUID) -> SyncJobStatus:
         from app.services.scoring_runner import ScoringRunner
@@ -516,14 +529,69 @@ class SyncRunner:
                 type(exc).__name__,
             )
 
-    def _release_job(self, job_id: uuid.UUID) -> None:
+    def _job_retry_delay(self, attempt: int) -> float:
+        if attempt <= 1:
+            return 5.0
+        elif attempt == 2:
+            return 15.0
+        return 30.0
+
+    def _release_job(self, job_id: uuid.UUID, error: str | None = None) -> None:
+        now = self._clock_now()
+        max_attempts = settings.sync_max_attempts
         with self.session_factory() as session:
             job = session.get(SyncJob, job_id)
             if job is None:
                 return
-            job.status = SyncJobStatus.QUEUED.value
-            job.worker_id = None
-            job.lease_expires_at = None
+            if job.attempt >= max_attempts:
+                job.status = SyncJobStatus.FAILED.value
+                job.finished_at = now
+                job.worker_id = None
+                job.lease_expires_at = None
+                job.next_attempt_at = None
+                job.error_message = (
+                    error or job.error_message or f"İş {job.attempt} denemeden sonra başarısız oldu."
+                )
+                session.execute(
+                    update(SyncJobAccount)
+                    .where(
+                        SyncJobAccount.sync_job_id == job.id,
+                        SyncJobAccount.status == SyncJobAccountStatus.RUNNING.value,
+                    )
+                    .values(status=SyncJobAccountStatus.FAILED.value)
+                )
+                session.execute(
+                    update(ScoringItem)
+                    .where(
+                        ScoringItem.sync_job_id == job.id,
+                        ScoringItem.status == "running",
+                    )
+                    .values(status="failed")
+                )
+            else:
+                delay = self._job_retry_delay(job.attempt)
+                job.status = SyncJobStatus.QUEUED.value
+                job.worker_id = None
+                job.lease_expires_at = None
+                job.next_attempt_at = now + timedelta(seconds=delay)
+                if error:
+                    job.error_message = error
+                session.execute(
+                    update(SyncJobAccount)
+                    .where(
+                        SyncJobAccount.sync_job_id == job.id,
+                        SyncJobAccount.status == SyncJobAccountStatus.RUNNING.value,
+                    )
+                    .values(status=SyncJobAccountStatus.QUEUED.value)
+                )
+                session.execute(
+                    update(ScoringItem)
+                    .where(
+                        ScoringItem.sync_job_id == job.id,
+                        ScoringItem.status == "running",
+                    )
+                    .values(status="queued")
+                )
             session.commit()
 
     # --- loop -----------------------------------------------------------
@@ -562,9 +630,12 @@ class SyncRunner:
                 continue
 
             logger.info("İş alındı: %s", job_id)
-            status = await self.execute(job_id)
-            logger.info("İş bitti: %s -> %s", job_id, status)
-            processed += 1
+            try:
+                status = await self.execute(job_id)
+                logger.info("İş bitti: %s -> %s", job_id, status)
+                processed += 1
+            except Exception as exc:
+                logger.error("İş yürütülürken hata oluştu (%s): %s", job_id, exc)
             if once:
                 return processed
 
@@ -579,7 +650,7 @@ class SyncRunner:
 
         try:
             created = await asyncio.to_thread(
-                SchedulerService(session_factory=self.session_factory, now=self._origin_now()).sync_due
+                SchedulerService(session_factory=self.session_factory, now=self._now).sync_due
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Zamanlayıcı turu başarısız: %s", type(exc).__name__)
@@ -587,9 +658,6 @@ class SyncRunner:
         if created:
             logger.info("Zamanlayıcı %s tarama işi oluşturdu.", len(created))
         return now
-
-    def _origin_now(self) -> datetime | None:
-        return self._now
 
 
 def utcnow() -> datetime:

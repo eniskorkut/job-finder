@@ -29,6 +29,7 @@ class SyncJobRead(ORMModel):
     requested_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    next_attempt_at: datetime | None = None
 
 
 class SyncAccountProgress(ORMModel):

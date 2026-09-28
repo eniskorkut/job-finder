@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.models.enums import (
     CursorKind,
@@ -143,30 +143,53 @@ class SyncJobRepository(Repository[SyncJob]):
         return self.db.execute(stmt).scalar_one_or_none()
 
     # --- worker side ---------------------------------------------------
-    def claim_next(self, *, worker_id: str, lease_seconds: int) -> SyncJob | None:
-        """Optimistic claim: pick a queued job, then flip it if still queued."""
+    def claim_next(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+        max_attempts: int | None = None,
+        now: datetime | None = None,
+    ) -> SyncJob | None:
+        """Optimistic claim: pick an eligible queued job, then flip it if still queued."""
+        limit_attempts = (
+            max_attempts if max_attempts is not None else 3
+        )
+        current_time = now or _now()
         candidates = self.db.execute(
             select(SyncJob.id)
-            .where(SyncJob.status == SyncJobStatus.QUEUED.value)
+            .where(
+                SyncJob.status == SyncJobStatus.QUEUED.value,
+                SyncJob.attempt < limit_attempts,
+                or_(
+                    SyncJob.next_attempt_at.is_(None),
+                    SyncJob.next_attempt_at <= current_time,
+                ),
+            )
             .order_by(SyncJob.requested_at)
             .limit(5)
         ).scalars()
-        now = _now()
         for job_id in list(candidates):
             result = self.db.execute(
                 update(SyncJob)
                 .where(
                     SyncJob.id == job_id,
                     SyncJob.status == SyncJobStatus.QUEUED.value,
+                    SyncJob.attempt < limit_attempts,
+                    or_(
+                        SyncJob.next_attempt_at.is_(None),
+                        SyncJob.next_attempt_at <= current_time,
+                    ),
                 )
                 .values(
                     status=SyncJobStatus.RUNNING.value,
                     worker_id=worker_id,
                     attempt=SyncJob.attempt + 1,
                     # coalesce keeps the first start time when a recovered job runs again
-                    started_at=func.coalesce(SyncJob.started_at, now),
-                    heartbeat_at=now,
-                    lease_expires_at=now + timedelta(seconds=lease_seconds),
+                    started_at=func.coalesce(SyncJob.started_at, current_time),
+                    heartbeat_at=current_time,
+                    lease_expires_at=current_time + timedelta(seconds=lease_seconds),
+                    next_attempt_at=None,
                 )
             )
             if result.rowcount:
@@ -197,39 +220,52 @@ class SyncJobRepository(Repository[SyncJob]):
         job.error_message = error
         job.finished_at = _now()
         job.lease_expires_at = None
+        job.next_attempt_at = None
         self.db.flush()
 
-    def recover_expired_leases(self, *, max_attempts: int) -> list[SyncJob]:
+    def recover_expired_leases(
+        self, *, max_attempts: int, now: datetime | None = None
+    ) -> list[SyncJob]:
         """Return stale jobs to the queue, or fail them once attempts run out."""
-        now = _now()
+        current_time = now or _now()
         stale = list(
             self.db.execute(
                 select(SyncJob).where(
                     SyncJob.status == SyncJobStatus.RUNNING.value,
                     SyncJob.lease_expires_at.is_not(None),
-                    SyncJob.lease_expires_at < now,
+                    SyncJob.lease_expires_at < current_time,
                 )
             ).scalars()
         )
         for job in stale:
             if job.attempt >= max_attempts:
                 job.status = SyncJobStatus.FAILED.value
-                job.finished_at = now
+                job.finished_at = current_time
+                job.worker_id = None
+                job.lease_expires_at = None
+                job.next_attempt_at = None
                 job.error_message = (
                     job.error_message
-                    or "İşçi süreci yanıt vermedi ve deneme hakkı doldu."
+                    or f"İşçi süreci yanıt vermedi ve {job.attempt} deneme hakkı doldu."
                 )
             else:
                 job.status = SyncJobStatus.QUEUED.value
                 job.worker_id = None
                 job.lease_expires_at = None
+                job.next_attempt_at = None
             self.db.execute(
                 update(SyncJobAccount)
                 .where(
                     SyncJobAccount.sync_job_id == job.id,
                     SyncJobAccount.status == SyncJobAccountStatus.RUNNING.value,
                 )
-                .values(status=SyncJobAccountStatus.QUEUED.value)
+                .values(
+                    status=(
+                        SyncJobAccountStatus.FAILED.value
+                        if job.attempt >= max_attempts
+                        else SyncJobAccountStatus.QUEUED.value
+                    )
+                )
             )
             # A crashed scoring job must not leave items stuck in ``running``.
             self.db.execute(
@@ -238,7 +274,13 @@ class SyncJobRepository(Repository[SyncJob]):
                     ScoringItem.sync_job_id == job.id,
                     ScoringItem.status == "running",
                 )
-                .values(status="queued")
+                .values(
+                    status=(
+                        "failed"
+                        if job.attempt >= max_attempts
+                        else "queued"
+                    )
+                )
             )
         if stale:
             self.db.flush()

@@ -227,6 +227,67 @@ Bu değerler `backend/.env.local` üzerinden ihtiyaca ve provider limitlerine g�
 
 ---
 
+### Retry ve Hata İyileştirme Katmanları (Multi-Layer Resilience Architecture)
+
+Sistem, hataları kapsamına göre üç bağımsız ve birbirini tamamlayan katmanda ele alır. Bu sayede ne transient ağ hataları işin çökmesine neden olur, ne de kalıcı hatalar hot-loop döngüsüne girer:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Katman 1: HTTP / Provider Retry (Transient / Anlık Ağ & Rate Limit)    │
+│   • 429 Rate Limit, 5xx Gateway/Server Errors, Connection Timeout      │
+│   • httpx transport katmanı + Retry-After + Exponential Backoff + Jitter│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Aşılırsa / Exception Yükselirse
+┌───────────────────────────────────▼────────────────────────────────────┐
+│ Katman 2: Job Retry (İş Seviyesi Sınırlı & Gecikmeli Yeniden Deneme)    │
+│   • Beklenmeyen Python runtime istisnaları, geçici servis kesintileri │
+│   • sync_jobs.attempt < SYNC_MAX_ATTEMPTS (varsayılan: 3)              │
+│   • Hot-loop koruması: next_attempt_at ile artan gecikme (5s, 15s, 30s) │
+│   • attempt >= SYNC_MAX_ATTEMPTS -> status=FAILED (sonlandırıcı hata)   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Worker Süreci Hard Crash Olursa
+┌───────────────────────────────────▼────────────────────────────────────┐
+│ Katman 3: Hard Crash & Lease Recovery (Konteyner / Süreç Kurtarma)     │
+│   • SIGKILL, OOM killer, elektrik/sunucu çökmesi, kernel panic         │
+│   • Periyodik lease + heartbeat (sync_lease_seconds)                   │
+│   • lease_expires_at dolduktan sonra başka/yeni worker işi devralır    │
+│   • processed_messages & scoring_items ile %100 idempotency            │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 1. Katman: HTTP / Provider Retry (İstek Seviyesi)
+- **Hangi Hataları Çözer?**
+  - Dış servislerin (Gmail API, Outlook Graph API, DeepSeek LLM, Telegram Bot API) döndüğü HTTP 429 (Too Many Requests), 500, 502, 503, 504 durum kodları.
+  - Geçici TCP soket kopmaları, DNS zaman aşımları ve TLS el sıkışma gecikmeleri.
+- **Nasıl Çalışır?**
+  - İstek seviyesinde yakalanır; işin veya worker'ın durumunu bozmaz.
+  - Sağlayıcı `Retry-After` başlığı dönmüşse bu süreye tam uyulur.
+  - Yoksa decorrelated full-jitter ile üstel geri çekilme (`backoff = min(max_delay, base_delay * 2^attempt) + jitter`) uygulanır.
+  - Kısa süreli geçici dalgalanmalar doğrudan bu katmanda sönümlenir.
+
+#### 2. Katman: Job Retry (İş Seviyesi - Bounded & Delayed)
+- **Hangi Hataları Çözer?**
+  - Kod içi beklenmeyen `Exception` durumları (örn. ayrıştırma sırasında beklenmeyen veri formatı, DB bağlantısının anlık düşmesi vb.).
+  - HTTP retry tavanına ulaşıp dışarı taşan kalıcı servis istisnaları.
+- **Nasıl Çalışır?**
+  - `SyncRunner.execute()` try/finally bloğunda iş başarıyla tamamlanamazsa `_release_job()` çağrılır.
+  - **Hot-Loop Koruması:** Hatalı iş hemen tekrar claim edilmez! `next_attempt_at = now + delay` atanır (1. denemede 5 saniye, 2. denemede 15 saniye, 3. denemede 30 saniye).
+  - **Sınırlandırılmış Deneme (Bounded Retry):** `attempt < SYNC_MAX_ATTEMPTS` kontrol edilir. `attempt >= SYNC_MAX_ATTEMPTS` olduğunda iş otomatik olarak `status = FAILED` durumuna geçirilir, `finished_at` ve açıklayıcı `error_message` yazılır.
+  - `SyncJobRepository.claim_next()` filtresi: Yalnızca `attempt < SYNC_MAX_ATTEMPTS` VE `(next_attempt_at IS NULL VEYA next_attempt_at <= now)` olan işleri claim eder. Sonsuz döngü imkansız hale getirilmiştir.
+
+#### 3. Katman: Hard Crash & Lease Recovery (Altyapı Seviyesi)
+- **Hangi Hataları Çözer?**
+  - Worker container'ının `SIGKILL` (kill -9) ile öldürülmesi.
+  - Docker daemon çökmesi, OOM (Out-of-Memory) killer tarafından worker process'inin sonlandırılması, sunucu elektrik kesintisi.
+- **Nasıl Çalışır?**
+  - Worker bir işi aldığında `lease_expires_at = now + sync_lease_seconds` (varsayılan: 60s) kilidi koyar ve arka planda heartbeat döngüsü ile bu süreyi düzenli olarak uzatır.
+  - Worker aniden ölürse heartbeat durur; `lease_expires_at` süresi dolar.
+  - Docker restart policy (`restart: unless-stopped`) ile ayağa kalkan veya kümedeki diğer worker, periyodik `recover_expired_leases()` taramasında süresi geçmiş kilidi tespit eder.
+  - İşi `QUEUED` durumuna geri alır; worker_id ve lease temizlenir, `attempt` artırılır.
+  - **İdempotency Güvencesi:** `processed_messages` ve `scoring_items` tablolarındaki atomic constraint'ler sayesinde, yarım kalan iş yeniden çalıştırıldığında daha önce taranmış e-postalar veya hesaplanmış skorlar asla mükerrer olarak işlenmez (0 duplicate).
+
+---
+
 ## SORUN GİDERME (TROUBLESHOOTING)
 
 ### 1) API Unhealthy

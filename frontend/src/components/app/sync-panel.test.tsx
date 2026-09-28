@@ -6,6 +6,7 @@ import { SyncPanel } from "@/components/app/sync-panel";
 
 const job = {
   id: "job-1",
+  kind: "mail_scan",
   status: "completed",
   trigger: "manual",
   accounts_total: 2,
@@ -18,6 +19,8 @@ const job = {
   errors_count: 0,
   attempt: 1,
   cancel_requested: false,
+  payload: {},
+  progress: {},
   error_message: null,
   requested_at: "2026-09-27T10:00:00Z",
   started_at: "2026-09-27T10:00:01Z",
@@ -68,7 +71,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 const statusPayload = {
   available: true,
-  phase: "phase-2",
+  phase: "phase-3",
   running: false,
   message: "Manuel tarama hazır.",
   last_sync_at: "2026-09-27T10:00:20Z",
@@ -76,6 +79,11 @@ const statusPayload = {
   active_cv: "cv.pdf",
   connected_accounts: 2,
   active_job_id: null,
+  active_job_kind: null,
+  last_auto_scan_at: null,
+  next_auto_scan_at: null,
+  scheduler_enabled: true,
+  llm_configured: true,
   worker_hint: "python -m app.worker",
 };
 
@@ -93,8 +101,10 @@ function mockApi(progress: unknown, statusOverride: Record<string, unknown> = {}
         jsonResponse(
           {
             job_id: "job-1",
+            kind: "mail_scan",
             status: "queued",
             accounts_total: 2,
+            total: 0,
             requested_at: "2026-09-27T10:00:00Z",
             message: "Tarama kuyruğa alındı. İşçi süreci çalışmıyorsa: python -m app.worker",
           },
@@ -111,7 +121,7 @@ function mockApi(progress: unknown, statusOverride: Record<string, unknown> = {}
 describe("SyncPanel", () => {
   it("queues a scan and shows the worker hint while it is queued", async () => {
     const user = userEvent.setup();
-    const fetchMock = mockApi({ job: { ...job, status: "queued" }, accounts: [] });
+    const fetchMock = mockApi({ job: { ...job, status: "queued" }, accounts: [], items: [] });
     render(<SyncPanel />);
 
     await user.click(await screen.findByRole("button", { name: /Şimdi Tara/ }));
@@ -127,7 +137,7 @@ describe("SyncPanel", () => {
 
   it("shows progress counters and per-account results", async () => {
     const user = userEvent.setup();
-    mockApi({ job, accounts });
+    mockApi({ job, accounts, items: [] });
     render(<SyncPanel />);
 
     await user.click(await screen.findByRole("button", { name: /Şimdi Tara/ }));
@@ -144,7 +154,7 @@ describe("SyncPanel", () => {
 
   it("explains a partial failure without hiding the successful mailbox", async () => {
     const user = userEvent.setup();
-    mockApi({ job: { ...job, status: "partial_failed", errors_count: 1 }, accounts });
+    mockApi({ job: { ...job, status: "partial_failed", errors_count: 1 }, accounts, items: [] });
     render(<SyncPanel />);
 
     await user.click(await screen.findByRole("button", { name: /Şimdi Tara/ }));
@@ -163,11 +173,11 @@ describe("SyncPanel", () => {
       }
       if (target.includes("/cancel")) {
         return Promise.resolve(
-          jsonResponse({ job: { ...job, status: "cancelled" }, accounts: [] }),
+          jsonResponse({ job: { ...job, status: "cancelled" }, accounts: [], items: [] }),
         );
       }
       if (target.includes("/sync/jobs/")) {
-        return Promise.resolve(jsonResponse({ job: { ...job, status: "running" }, accounts }));
+        return Promise.resolve(jsonResponse({ job: { ...job, status: "running" }, accounts, items: [] }));
       }
       return Promise.resolve(
         jsonResponse(
@@ -228,7 +238,7 @@ describe("SyncPanel", () => {
 
   it("adopts an already running job after a page reload", async () => {
     mockApi(
-      { job: { ...job, status: "running" }, accounts },
+      { job: { ...job, status: "running" }, accounts, items: [] },
       { running: true, active_job_id: "job-1" },
     );
     render(<SyncPanel />);

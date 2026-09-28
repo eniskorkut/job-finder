@@ -36,6 +36,12 @@ const statusTones: Record<string, "success" | "danger" | "warning" | "neutral"> 
   skipped: "neutral",
 };
 
+const kindLabels: Record<string, string> = {
+  mail_scan: "Posta taraması",
+  scoring: "CV analizi",
+  notify: "Telegram bildirimi",
+};
+
 const jobStatusLabels: Record<string, string> = {
   queued: "Kuyrukta",
   running: "Sürüyor",
@@ -135,6 +141,7 @@ export function HistoryView() {
                 <THead>
                   <TR className="pointer-hover:bg-transparent">
                     <TH>İstek</TH>
+                    <TH>Tür</TH>
                     <TH>Durum</TH>
                     <TH className="text-right">Hesap</TH>
                     <TH className="text-right">Mesaj</TH>
@@ -152,6 +159,9 @@ export function HistoryView() {
                         <span className="block text-[11px] text-ink-subtle">
                           {formatRelative(job.requested_at)}
                         </span>
+                      </TD>
+                      <TD>
+                        <Badge variant="muted">{kindLabels[job.kind] ?? job.kind}</Badge>
                       </TD>
                       <TD>
                         <Badge variant={jobTones[job.status] ?? "neutral"}>
@@ -200,6 +210,37 @@ export function HistoryView() {
                       Kapat
                     </Button>
                   </div>
+                  {selectedJob.items?.length
+                    ? selectedJob.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface px-3 py-2 text-[12px] shadow-[var(--shadow-card)]"
+                        >
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate font-medium text-ink">
+                              {item.job_title ?? "ilan"}
+                              {item.company ? ` · ${item.company}` : ""}
+                            </span>
+                            {item.error_message ? (
+                              <span className="text-danger">{item.error_message}</span>
+                            ) : (
+                              <span className="text-ink-subtle">deneme: {item.attempt}</span>
+                            )}
+                          </span>
+                          <Badge
+                            variant={
+                              item.status === "succeeded"
+                                ? "success"
+                                : item.status === "failed"
+                                  ? "danger"
+                                  : "neutral"
+                            }
+                          >
+                            {item.status}
+                          </Badge>
+                        </div>
+                      ))
+                    : null}
                   {selectedJob.accounts.map((account) => (
                     <div
                       key={account.id}
@@ -273,6 +314,7 @@ export function HistoryView() {
                 <THead>
                   <TR className="pointer-hover:bg-transparent">
                     <TH>İstek</TH>
+                    <TH>Tür</TH>
                     <TH>Durum</TH>
                     <TH className="text-right">Hesap</TH>
                     <TH className="text-right">Mesaj</TH>
@@ -290,6 +332,9 @@ export function HistoryView() {
                         <span className="block text-[11px] text-ink-subtle">
                           {formatRelative(job.requested_at)}
                         </span>
+                      </TD>
+                      <TD>
+                        <Badge variant="muted">{kindLabels[job.kind] ?? job.kind}</Badge>
                       </TD>
                       <TD>
                         <Badge variant={jobTones[job.status] ?? "neutral"}>
@@ -338,6 +383,37 @@ export function HistoryView() {
                       Kapat
                     </Button>
                   </div>
+                  {selectedJob.items?.length
+                    ? selectedJob.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface px-3 py-2 text-[12px] shadow-[var(--shadow-card)]"
+                        >
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate font-medium text-ink">
+                              {item.job_title ?? "ilan"}
+                              {item.company ? ` · ${item.company}` : ""}
+                            </span>
+                            {item.error_message ? (
+                              <span className="text-danger">{item.error_message}</span>
+                            ) : (
+                              <span className="text-ink-subtle">deneme: {item.attempt}</span>
+                            )}
+                          </span>
+                          <Badge
+                            variant={
+                              item.status === "succeeded"
+                                ? "success"
+                                : item.status === "failed"
+                                  ? "danger"
+                                  : "neutral"
+                            }
+                          >
+                            {item.status}
+                          </Badge>
+                        </div>
+                      ))
+                    : null}
                   {selectedJob.accounts.map((account) => (
                     <div
                       key={account.id}

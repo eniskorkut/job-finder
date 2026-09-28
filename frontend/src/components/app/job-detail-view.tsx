@@ -8,7 +8,9 @@ import {
   CalendarClock,
   CircleDollarSign,
   ExternalLink,
+  Info,
   MapPin,
+  RefreshCcw,
   Sparkles,
 } from "lucide-react";
 
@@ -28,13 +30,54 @@ import {
   workModeLabels,
 } from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
-import type { JobDetail } from "@/lib/types";
+import type { DimensionStatus, JobDetail, ReanalyzeResponse } from "@/lib/types";
+
+const dimensionLabels: Record<string, string> = {
+  experience: "Deneyim",
+  title: "Pozisyon",
+  location: "Lokasyon",
+  work_mode: "Çalışma biçimi",
+};
+
+const dimensionTones: Record<DimensionStatus, "success" | "warning" | "danger" | "muted"> = {
+  match: "success",
+  partial: "warning",
+  mismatch: "danger",
+  unknown: "muted",
+};
+
+const dimensionText: Record<DimensionStatus, string> = {
+  match: "uyumlu",
+  partial: "kısmen",
+  mismatch: "uyumsuz",
+  unknown: "bilinmiyor",
+};
 
 export function JobDetailView({ jobId }: { jobId: string }) {
   const job = useApiQuery<JobDetail>(`/api/v1/jobs/${jobId}`);
   const [status, setStatus] = useState<string | null>(null);
   const [savingStatus, setSavingStatus] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  async function reanalyze() {
+    setAnalyzing(true);
+    setAnalysisMessage(null);
+    setActionError(null);
+    try {
+      const response = await api.post<ReanalyzeResponse>(`/api/v1/jobs/${jobId}/reanalyze`);
+      setAnalysisMessage(
+        `${response.message} İlerlemeyi Tarama Geçmişi ekranından izleyebilirsiniz.`,
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof ApiError ? error.message : "Analiz başlatılamadı.",
+      );
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   async function changeStatus(next: "saved" | "dismissed" | "viewed") {
     setSavingStatus(true);
@@ -99,6 +142,16 @@ export function JobDetailView({ jobId }: { jobId: string }) {
           <Button
             variant="secondary"
             size="sm"
+            loading={analyzing}
+            onClick={reanalyze}
+            title="CV ile yeniden değerlendir"
+          >
+            <RefreshCcw aria-hidden className="size-3.5" strokeWidth={2} />
+            Tekrar değerlendir
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             loading={savingStatus}
             onClick={() => changeStatus("saved")}
             disabled={currentStatus === "saved"}
@@ -118,6 +171,11 @@ export function JobDetailView({ jobId }: { jobId: string }) {
       </div>
 
       {data.is_mock ? <MockNotice /> : null}
+      {analysisMessage ? (
+        <div className="rounded-[var(--radius-card)] bg-success-soft px-3.5 py-2.5 text-[12.5px] leading-5 text-success">
+          {analysisMessage}
+        </div>
+      ) : null}
       {actionError ? (
         <div
           role="alert"
@@ -201,7 +259,29 @@ export function JobDetailView({ jobId }: { jobId: string }) {
                     : (data.match?.model ?? "skorlanmadı")}
                 </span>
               </div>
+              {data.match?.confidence !== null && data.match?.confidence !== undefined ? (
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-ink-subtle">Güven</span>
+                  <span className="tabular font-medium text-ink">
+                    %{data.match.confidence}
+                  </span>
+                </div>
+              ) : null}
               <ScoreBar score={data.match?.score ?? null} />
+
+              {data.match?.analysis_status && data.match.analysis_status !== "completed" ? (
+                <p className="text-[12.5px] leading-5 text-ink-subtle">
+                  Durum:{" "}
+                  <strong className="font-medium">
+                    {data.match.analysis_status === "failed"
+                      ? "analiz başarısız"
+                      : data.match.analysis_status === "running"
+                        ? "analiz sürüyor"
+                        : "analiz bekliyor"}
+                  </strong>
+                  {data.match.analysis_error ? ` — ${data.match.analysis_error}` : ""}
+                </p>
+              ) : null}
 
               {data.match?.rationale ? (
                 <p className="text-[13px] leading-5 text-ink-muted">
@@ -212,6 +292,49 @@ export function JobDetailView({ jobId }: { jobId: string }) {
                   Bu ilan için eşleşme gerekçesi yok.
                 </p>
               )}
+
+              {data.match?.match_details &&
+              Object.keys(data.match.match_details).length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {(["title", "experience", "location", "work_mode"] as const).map((key) => {
+                    const dimension = data.match?.match_details?.[key];
+                    if (!dimension) return null;
+                    return (
+                      <div key={key} className="flex items-start justify-between gap-3">
+                        <span className="text-[12px] text-ink-subtle">
+                          {dimensionLabels[key]}
+                        </span>
+                        <span className="flex max-w-[70%] flex-col items-end gap-0.5 text-right">
+                          <Badge variant={dimensionTones[dimension.status]}>
+                            {dimensionText[dimension.status]}
+                          </Badge>
+                          {dimension.reason ? (
+                            <span className="text-[11.5px] leading-4 text-ink-muted">
+                              {dimension.reason}
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {data.match?.insufficient_information ? (
+                <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-warning-soft px-3 py-2 text-[11.5px] leading-4 text-warning">
+                  <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+                  İlan metni kısıtlı olduğu için değerlendirme sınırlı; güven puanı
+                  düşük tutuldu.
+                </p>
+              ) : null}
+
+              {data.match?.analysis_status === "completed" ? (
+                <p className="flex items-start gap-2 text-[11.5px] leading-4 text-ink-subtle">
+                  <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+                  Bu puan işe alınma ihtimali değildir; CV ile ilan gereksinimleri
+                  arasındaki uyumu gösterir.
+                </p>
+              ) : null}
 
               {data.match?.matched_skills?.length ? (
                 <div className="flex flex-col gap-1.5">
@@ -270,6 +393,32 @@ export function JobDetailView({ jobId }: { jobId: string }) {
                 label="E-posta hesabı"
                 value={data.mail_account_email ?? "Taranmadı (örnek veri)"}
               />
+              {data.analysis_cv ? (
+                <>
+                  <Row label="Kullanılan CV" value={data.analysis_cv.filename ?? "—"} />
+                  <Row
+                    label="CV sürümü"
+                    value={data.analysis_cv.checksum?.slice(0, 12) ?? "—"}
+                  />
+                  <Row label="Model" value={data.analysis_cv.model ?? "—"} />
+                  <Row
+                    label="Analiz zamanı"
+                    value={formatDateTime(data.analysis_cv.analyzed_at)}
+                  />
+                  <Row
+                    label="Prompt sürümü"
+                    value={data.analysis_cv.prompt_version ?? "—"}
+                  />
+                </>
+              ) : null}
+              {data.sources.length > 0 ? (
+                <Row
+                  label="Kaynak iletiler"
+                  value={data.sources
+                    .map((source) => source.account_email ?? source.provider)
+                    .join(", ")}
+                />
+              ) : null}
             </CardContent>
           </Card>
         </div>

@@ -308,8 +308,8 @@ export function PreferencesForm() {
         <CardHeader>
           <CardTitle>Tarama ve bildirim</CardTitle>
           <CardDescription>
-            Otomatik tarama ve Telegram bildirimi henüz geliştirilmedi; bu
-            ayarlar 2. ve 3. aşamada devreye girecek.
+            Otomatik tarama, worker süreci içindeki zamanlayıcı ile çalışır
+            (en sık 1 saatte bir). Eşik üstü yeni eşleşmeler Telegram&apos;a gönderilir.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -319,7 +319,8 @@ export function PreferencesForm() {
                 Günlük otomatik tarama
               </span>
               <span className="text-[12px] text-ink-subtle">
-                Aktif edildiğinde seçilen sıklıkta çalışır (3. aşama).
+                İlk tarama, kaydettiğiniz anda bir aralık sonrası için planlanır;
+                hemen taramak için &quot;Şimdi Tara&quot; düğmesini kullanın.
               </span>
             </div>
             <Switch
@@ -335,7 +336,7 @@ export function PreferencesForm() {
                 Telegram bildirimi
               </span>
               <span className="text-[12px] text-ink-subtle">
-                Yüksek puanlı eşleşmeler Telegram'a gönderilir (3. aşama).
+                Eşik üstü eşleşmeler kendi botunuz üzerinden gönderilir.
               </span>
             </div>
             <Switch
@@ -357,10 +358,13 @@ export function PreferencesForm() {
                 patch({ scan_interval_hours: Number(event.target.value) })
               }
             >
+              <option value={1}>Saatte bir (en sık)</option>
+              <option value={3}>3 saatte bir</option>
               <option value={6}>6 saatte bir</option>
               <option value={12}>12 saatte bir</option>
               <option value={24}>Günde bir</option>
               <option value={48}>2 günde bir</option>
+              <option value={168}>Haftada bir</option>
             </Select>
           </Field>
         </CardContent>

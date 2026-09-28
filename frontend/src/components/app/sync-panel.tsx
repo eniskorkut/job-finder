@@ -22,6 +22,12 @@ import type { SyncJobProgress, SyncRunResponse, SyncStatus } from "@/lib/types";
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 const POLL_INTERVAL_MS = 1500;
 
+const kindLabels: Record<string, string> = {
+  mail_scan: "Posta taraması",
+  scoring: "CV analizi",
+  notify: "Telegram bildirimi",
+};
+
 const statusLabels: Record<string, string> = {
   queued: "Kuyrukta",
   running: "Sürüyor",
@@ -157,7 +163,7 @@ export function SyncPanel({
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
             <RefreshCcw aria-hidden className="size-4" strokeWidth={1.75} />
-            Manuel tarama
+            {job ? (kindLabels[job.kind] ?? "Manuel tarama") : "Manuel tarama"}
           </CardTitle>
           {job ? (
             <Badge variant={statusTones[job.status] ?? "neutral"}>
@@ -169,6 +175,11 @@ export function SyncPanel({
           {status.data?.last_sync_at
             ? `Son tarama: ${formatDateTime(status.data.last_sync_at)} (${formatRelative(status.data.last_sync_at)})`
             : "Henüz tarama yapılmadı."}
+          {status.data?.scheduler_enabled && status.data?.next_auto_scan_at
+            ? ` · Sonraki otomatik tarama: ${formatDateTime(status.data.next_auto_scan_at)}`
+            : status.data?.scheduler_enabled
+              ? " · Otomatik tarama kapalı (Tercihler'den açabilirsiniz)."
+              : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -201,28 +212,64 @@ export function SyncPanel({
 
         {job ? (
           <div className="flex flex-col gap-3 rounded-[var(--radius-card)] bg-surface-muted p-3.5">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Metric label="Hesap" value={`${job.accounts_processed}/${job.accounts_total}`} />
-              <Metric label="Taranan mesaj" value={job.messages_scanned} />
-              <Metric label="Yeni ilan" value={job.jobs_new} tone="success" />
-              <Metric label="Tekrar" value={job.jobs_duplicate} />
-              {!compact ? (
-                <>
-                  <Metric label="Bulunan" value={job.jobs_found} />
-                  <Metric label="Atlanan e-posta" value={job.messages_skipped} />
-                  <Metric
-                    label="Hata"
-                    value={job.errors_count}
-                    tone={job.errors_count ? "danger" : undefined}
-                  />
-                  <Metric
-                    label="Deneme"
-                    value={job.attempt}
-                    hint={job.finished_at ? formatRelative(job.finished_at) : undefined}
-                  />
-                </>
-              ) : null}
-            </div>
+            {job.kind === "scoring" ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Metric
+                  label="Analiz"
+                  value={`${job.progress.analyzed ?? 0}/${job.progress.total ?? 0}`}
+                />
+                <Metric
+                  label="Bekleyen"
+                  value={Math.max(
+                    0,
+                    (job.progress.total ?? 0) -
+                      (job.progress.analyzed ?? 0) -
+                      (job.progress.failed ?? 0) -
+                      (job.progress.skipped ?? 0),
+                  )}
+                />
+                <Metric
+                  label="Başarısız"
+                  value={job.progress.failed ?? 0}
+                  tone={(job.progress.failed ?? 0) > 0 ? "danger" : undefined}
+                />
+                <Metric label="Atlanan" value={job.progress.skipped ?? 0} />
+              </div>
+            ) : job.kind === "notify" ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Metric label="Gönderilen" value={job.progress.sent ?? 0} tone="success" />
+                <Metric
+                  label="Başarısız"
+                  value={job.progress.failed ?? 0}
+                  tone={(job.progress.failed ?? 0) > 0 ? "danger" : undefined}
+                />
+                <Metric label="Atlanan" value={job.progress.skipped ?? 0} />
+                <Metric label="Toplam" value={job.progress.total ?? 0} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Metric label="Hesap" value={`${job.accounts_processed}/${job.accounts_total}`} />
+                <Metric label="Taranan mesaj" value={job.messages_scanned} />
+                <Metric label="Yeni ilan" value={job.jobs_new} tone="success" />
+                <Metric label="Tekrar" value={job.jobs_duplicate} />
+                {!compact ? (
+                  <>
+                    <Metric label="Bulunan" value={job.jobs_found} />
+                    <Metric label="Atlanan e-posta" value={job.messages_skipped} />
+                    <Metric
+                      label="Hata"
+                      value={job.errors_count}
+                      tone={job.errors_count ? "danger" : undefined}
+                    />
+                    <Metric
+                      label="Deneme"
+                      value={job.attempt}
+                      hint={job.finished_at ? formatRelative(job.finished_at) : undefined}
+                    />
+                  </>
+                ) : null}
+              </div>
+            )}
 
             {running ? (
               <p className="flex items-center gap-2 text-[12px] text-ink-subtle">
@@ -231,6 +278,39 @@ export function SyncPanel({
                   ? "İş kuyrukta. İşçi süreci çalışmıyorsa: python -m app.worker"
                   : "Tarama sürüyor; ilerleme otomatik güncelleniyor."}
               </p>
+            ) : null}
+
+            {!compact && progress?.items.length ? (
+              <ul className="flex flex-col gap-1.5">
+                {progress.items.slice(0, 12).map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface px-3 py-2 text-[12px] shadow-[var(--shadow-card)]"
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-medium text-ink">
+                        {item.job_title ?? "ilan"} · {item.company ?? ""}
+                      </span>
+                      {item.error_message ? (
+                        <span className="text-danger">{item.error_message}</span>
+                      ) : null}
+                    </span>
+                    <Badge
+                      variant={
+                        item.status === "succeeded"
+                          ? "success"
+                          : item.status === "failed"
+                            ? "danger"
+                            : item.status === "running"
+                              ? "accent"
+                              : "neutral"
+                      }
+                    >
+                      {accountStatusLabels[item.status] ?? item.status}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
             ) : null}
 
             {!compact && progress?.accounts.length ? (

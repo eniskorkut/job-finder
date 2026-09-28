@@ -10,6 +10,7 @@ import {
   Telescope,
 } from "lucide-react";
 
+import { AnalysisPanel } from "@/components/app/analysis-panel";
 import { ErrorState } from "@/components/app/error-state";
 import { SyncPanel } from "@/components/app/sync-panel";
 import { useSession } from "@/components/app/session-provider";
@@ -70,36 +71,52 @@ export function DashboardView() {
 
       <section className="stagger grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Toplam ilan"
-          value={stats.data?.total_jobs ?? 0}
-          hint={stats.data?.mock_jobs ? `${stats.data.mock_jobs} örnek kayıt` : undefined}
+          label="Gerçek ilan"
+          value={stats.data?.real_jobs ?? 0}
+          hint={
+            stats.data?.mock_jobs
+              ? `ayrıca ${stats.data.mock_jobs} örnek kayıt`
+              : "e-posta taramalarından"
+          }
           icon={BriefcaseBusiness}
           loading={loading}
         />
         <StatCard
-          label="Yeni ilanlar"
-          value={stats.data?.new_jobs ?? 0}
-          hint="Henüz incelenmedi"
+          label="Bugün bulunan"
+          value={stats.data?.discovered_today ?? 0}
+          hint="Gerçek ilanlar"
           icon={Telescope}
           tone="accent"
           loading={loading}
         />
         <StatCard
-          label="Yüksek eşleşme"
-          value={stats.data?.high_match_jobs ?? 0}
-          hint={`${stats.data?.high_match_threshold ?? 70}+ puan`}
+          label="Analiz bekleyen"
+          value={stats.data?.pending_analysis ?? 0}
+          hint={
+            stats.data?.failed_analysis
+              ? `${stats.data.failed_analysis} başarısız analiz`
+              : "CV eşleştirmesi kuyruğu"
+          }
           icon={Sparkles}
-          tone="success"
+          tone={(stats.data?.pending_analysis ?? 0) > 0 ? "warning" : "neutral"}
           loading={loading}
         />
         <StatCard
-          label="Ortalama puan"
-          value={stats.data?.average_score ?? "—"}
-          hint="Örnek skorlar"
+          label="Yüksek eşleşme"
+          value={stats.data?.high_match_jobs ?? 0}
+          hint={`${stats.data?.high_match_threshold ?? 70}+ puan · ort. ${stats.data?.average_score ?? "—"}`}
           icon={FileText}
+          tone="success"
           loading={loading}
         />
       </section>
+
+      <AnalysisPanel
+        onQueued={() => {
+          overview.refetch();
+          stats.refetch();
+        }}
+      />
 
       <section className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
         <Card>

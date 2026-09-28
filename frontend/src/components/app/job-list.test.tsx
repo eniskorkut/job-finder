@@ -56,6 +56,7 @@ function mockJobsApi(overrides: { jobs?: unknown; status?: number } = {}) {
           locations: ["İstanbul, Türkiye"],
           companies: ["NovaTech AI"],
           work_modes: ["hybrid"],
+          analysis_statuses: ["completed"],
         }),
       );
     }
@@ -113,6 +114,47 @@ describe("JobList", () => {
       },
       { timeout: 2000 },
     );
+  });
+
+  it("passes score, analysis and notification filters to the API", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockJobsApi();
+    render(<JobList />);
+    await screen.findByText("Senior AI Engineer");
+
+    await user.selectOptions(screen.getByLabelText("Minimum eşleşme puanı"), "70");
+    await user.selectOptions(screen.getByLabelText("Maksimum eşleşme puanı"), "90");
+    await user.selectOptions(screen.getByLabelText("Analiz durumu"), "completed");
+    await user.selectOptions(screen.getByLabelText("Bildirim durumu"), "sent");
+    await user.selectOptions(screen.getByLabelText("Sıralama"), "confidence");
+
+    await waitFor(() => {
+      const last = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.includes("/api/v1/jobs?"))
+        .pop();
+      expect(last).toContain("min_score=70");
+      expect(last).toContain("max_score=90");
+      expect(last).toContain("analysis_status=completed");
+      expect(last).toContain("notification=sent");
+      expect(last).toContain("sort=confidence");
+    });
+  });
+
+  it("shows the analysis state when a posting was not scored yet", async () => {
+    const pending = {
+      ...jobPage,
+      items: [
+        {
+          ...jobPage.items[0],
+          match: { ...jobPage.items[0].match, score: null, analysis_status: "pending", confidence: null },
+        },
+      ],
+    };
+    mockJobsApi({ jobs: pending });
+    render(<JobList />);
+
+    expect(await screen.findByText("analiz bekliyor")).toBeInTheDocument();
   });
 
   it("shows an empty state when there are no jobs", async () => {

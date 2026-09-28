@@ -24,9 +24,18 @@ export interface Page<T> {
   pages: number;
 }
 
+export type AnalysisStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+export type DimensionStatus = "match" | "partial" | "mismatch" | "unknown";
+
+export interface DimensionMatch {
+  status: DimensionStatus;
+  reason: string;
+}
+
 export interface JobMatch {
   id: string;
   score: number | null;
+  confidence: number | null;
   rationale: string | null;
   matched_skills: string[];
   missing_skills: string[];
@@ -35,6 +44,18 @@ export interface JobMatch {
   is_mock: boolean;
   notified_at: string | null;
   updated_at: string;
+  analysis_status: AnalysisStatus;
+  analysis_error: string | null;
+  analysis_attempts: number;
+  analyzed_at: string | null;
+  cv_checksum: string | null;
+  prompt_version: string | null;
+  insufficient_information: boolean;
+  experience_match: DimensionStatus;
+  location_match: DimensionStatus;
+  work_mode_match: DimensionStatus;
+  title_match: DimensionStatus;
+  match_details: Record<string, DimensionMatch>;
 }
 
 export interface Job {
@@ -51,12 +72,38 @@ export interface Job {
   is_mock: boolean;
   posted_at: string | null;
   discovered_at: string;
+  description_status: "ok" | "insufficient_description";
   match: JobMatch | null;
+}
+
+export interface JobSource {
+  provider: string;
+  provider_message_id: string;
+  subject: string | null;
+  sender: string | null;
+  received_at: string | null;
+  discovered_at: string;
+  account_email: string | null;
 }
 
 export interface JobDetail extends Job {
   description: string | null;
   mail_account_email: string | null;
+  sources: JobSource[];
+  analysis_cv: {
+    checksum: string | null;
+    filename: string | null;
+    model: string | null;
+    prompt_version: string | null;
+    analyzed_at: string | null;
+  } | null;
+}
+
+export interface ReanalyzeResponse {
+  job_id: string;
+  total: number;
+  status: string;
+  message: string;
 }
 
 export interface JobStats {
@@ -70,6 +117,13 @@ export interface JobStats {
   average_score: number | null;
   jobs_by_source: Record<string, number>;
   top_companies: { company: string; count: number }[];
+  real_jobs: number;
+  discovered_today: number;
+  analyzed_jobs: number;
+  pending_analysis: number;
+  failed_analysis: number;
+  notified_jobs: number;
+  average_confidence: number | null;
 }
 
 export interface JobFilterOptions {
@@ -77,6 +131,7 @@ export interface JobFilterOptions {
   locations: string[];
   companies: string[];
   work_modes: string[];
+  analysis_statuses: string[];
 }
 
 export interface Preferences {
@@ -154,13 +209,16 @@ export interface IntegrationsResponse {
   integrations: Integration[];
   deepseek: {
     provider: string;
-    label: string;
-    model: string;
-    base_url: string;
+    label?: string;
+    configured: boolean;
     shared: boolean;
     enabled: boolean;
-    configured: boolean;
-    phase: string;
+    model: string | null;
+    endpoint_host: string | null;
+    endpoint_path: string | null;
+    prompt_version?: string;
+    json_mode?: boolean;
+    max_concurrency?: number;
     note: string;
   };
 }
@@ -189,6 +247,7 @@ export type SyncJobStatus =
 
 export interface SyncJob {
   id: string;
+  kind: "mail_scan" | "scoring" | "notify" | string;
   status: SyncJobStatus;
   trigger: string;
   accounts_total: number;
@@ -201,8 +260,24 @@ export interface SyncJob {
   errors_count: number;
   attempt: number;
   cancel_requested: boolean;
+  payload: Record<string, unknown>;
+  progress: Record<string, number>;
   error_message: string | null;
   requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface ScoringItemProgress {
+  id: string;
+  job_id: string;
+  job_title: string | null;
+  company: string | null;
+  status: string;
+  attempt: number;
+  error_class: string | null;
+  error_message: string | null;
+  match_id: string | null;
   started_at: string | null;
   finished_at: string | null;
 }
@@ -227,12 +302,15 @@ export interface SyncAccountProgress {
 export interface SyncJobProgress {
   job: SyncJob;
   accounts: SyncAccountProgress[];
+  items: ScoringItemProgress[];
 }
 
 export interface SyncRunResponse {
   job_id: string;
   status: SyncJobStatus;
+  kind: string;
   accounts_total: number;
+  total: number;
   requested_at: string;
   message: string;
 }
@@ -273,10 +351,15 @@ export interface SyncStatus {
   message: string;
   last_sync_at: string | null;
   next_scan_at: string | null;
+  last_auto_scan_at: string | null;
+  next_auto_scan_at: string | null;
   active_cv: string | null;
   connected_accounts: number;
   active_job_id: string | null;
+  active_job_kind: string | null;
   worker_hint: string | null;
+  scheduler_enabled: boolean;
+  llm_configured: boolean;
 }
 
 export interface NotificationEntry {
@@ -285,13 +368,77 @@ export interface NotificationEntry {
   status: string;
   message: string | null;
   error_message: string | null;
+  error_class: string | null;
+  attempts: number;
+  provider_message_id: string | null;
   job_id: string | null;
   job_match_id: string | null;
   job_title: string | null;
   company: string | null;
+  score: number | null;
   sent_at: string | null;
   created_at: string;
   is_mock: boolean;
+}
+
+export interface TelegramStatus {
+  provider: string;
+  status: string;
+  connected: boolean;
+  bot_username: string | null;
+  chat_id: string | null;
+  token_hint: string | null;
+  has_token: boolean;
+  last_error: string | null;
+  last_error_class: string | null;
+  last_checked_at: string | null;
+  last_notification_at: string | null;
+  linked_at: string | null;
+  available: boolean;
+  phase: string;
+  message: string;
+  hint: string;
+}
+
+export interface TelegramChatCandidate {
+  chat_id: string;
+  type: string | null;
+  title: string | null;
+  username: string | null;
+  last_message_at: number | null;
+}
+
+export interface TelegramDetectResponse {
+  bot_username: string | null;
+  candidates: TelegramChatCandidate[];
+  suggested_chat_id: string | null;
+  requires_manual_choice: boolean;
+  message: string;
+}
+
+export interface TelegramTestResponse {
+  ok: boolean;
+  message: string;
+  status: string;
+  message_id: number | null;
+}
+
+export interface NotificationSummary {
+  sent: number;
+  failed: number;
+  skipped: number;
+  pending: number;
+  threshold: number;
+  enabled: boolean;
+  telegram_ready: boolean;
+  last_sent_at: string | null;
+}
+
+export interface NotificationDispatchResponse {
+  queued: boolean;
+  job_id: string | null;
+  total: number;
+  message: string;
 }
 
 export interface OverviewIntegration {
@@ -319,7 +466,34 @@ export interface Overview {
   sync_available: boolean;
   connected_accounts: number;
   active_job_id: string | null;
+  active_job_kind: string | null;
   worker_hint: string | null;
+  real_jobs: number;
+  discovered_today: number;
+  analyzed_jobs: number;
+  pending_analysis: number;
+  failed_analysis: number;
+  notified_jobs: number;
+  average_score: number | null;
+  last_manual_scan_at: string | null;
+  last_auto_scan_at: string | null;
+  next_auto_scan_at: string | null;
+  auto_scan_enabled: boolean;
+  scan_interval_hours: number;
+  llm: {
+    provider?: string;
+    configured?: boolean;
+    shared?: boolean;
+    model?: string | null;
+    endpoint_host?: string | null;
+    endpoint_path?: string | null;
+    prompt_version?: string;
+    max_concurrency?: number;
+    enabled?: boolean;
+    label?: string;
+    note?: string;
+  };
+  notifications: NotificationSummary;
 }
 
 export interface Invitation {

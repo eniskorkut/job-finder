@@ -31,6 +31,9 @@ interface Filters {
   workMode: string;
   status: string;
   minScore: string;
+  maxScore: string;
+  analysisStatus: string;
+  notification: string;
   sort: string;
 }
 
@@ -40,7 +43,18 @@ const emptyFilters: Filters = {
   workMode: "",
   status: "",
   minScore: "",
-  sort: "recent",
+  maxScore: "",
+  analysisStatus: "",
+  notification: "",
+  sort: "score",
+};
+
+const analysisLabels: Record<string, string> = {
+  pending: "analiz bekliyor",
+  running: "analiz sürüyor",
+  completed: "analiz edildi",
+  failed: "analiz başarısız",
+  skipped: "analiz atlandı",
 };
 
 const statusVariants = {
@@ -75,11 +89,26 @@ export function JobList({
         work_mode: filters.workMode,
         status: filters.status,
         min_score: filters.minScore,
+        max_score: filters.maxScore,
+        analysis_status: filters.analysisStatus,
+        notification: filters.notification,
         sort: filters.sort,
         page,
         page_size: pageSize,
       }),
-    [debouncedSearch, filters.company, filters.workMode, filters.status, filters.minScore, filters.sort, page, pageSize],
+    [
+      debouncedSearch,
+      filters.company,
+      filters.workMode,
+      filters.status,
+      filters.minScore,
+      filters.maxScore,
+      filters.analysisStatus,
+      filters.notification,
+      filters.sort,
+      page,
+      pageSize,
+    ],
   );
 
   const jobs = useApiQuery<Page<Job>>(`/api/v1/jobs${query}`);
@@ -91,6 +120,9 @@ export function JobList({
     filters.workMode,
     filters.status,
     filters.minScore,
+    filters.maxScore,
+    filters.analysisStatus,
+    filters.notification,
   ].filter(Boolean).length;
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
@@ -184,6 +216,38 @@ export function JobList({
               ))}
             </Select>
             <Select
+              value={filters.maxScore}
+              onChange={(event) => update("maxScore", event.target.value)}
+              aria-label="Maksimum eşleşme puanı"
+            >
+              <option value="">Maksimum puan yok</option>
+              {[50, 60, 70, 80, 90].map((value) => (
+                <option key={value} value={value}>
+                  {value} ve altı
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={filters.analysisStatus}
+              onChange={(event) => update("analysisStatus", event.target.value)}
+              aria-label="Analiz durumu"
+            >
+              <option value="">Tüm analiz durumları</option>
+              <option value="pending">Analiz bekliyor</option>
+              <option value="running">Analiz sürüyor</option>
+              <option value="completed">Analiz edildi</option>
+              <option value="failed">Analiz başarısız</option>
+            </Select>
+            <Select
+              value={filters.notification}
+              onChange={(event) => update("notification", event.target.value)}
+              aria-label="Bildirim durumu"
+            >
+              <option value="">Tüm bildirim durumları</option>
+              <option value="sent">Bildirildi</option>
+              <option value="pending">Bildirilmedi</option>
+            </Select>
+            <Select
               value={filters.sort}
               onChange={(event) => update("sort", event.target.value)}
               aria-label="Sıralama"
@@ -192,6 +256,7 @@ export function JobList({
               <option value="oldest">En eski</option>
               <option value="score">Puan (yüksek → düşük)</option>
               <option value="score_asc">Puan (düşük → yüksek)</option>
+              <option value="confidence">Güven (yüksek → düşük)</option>
               <option value="company">Şirket (A → Z)</option>
               <option value="title">Başlık (A → Z)</option>
             </Select>
@@ -277,10 +342,31 @@ export function JobList({
                         <span title={job.discovered_at}>
                           {formatRelative(job.discovered_at)}
                         </span>
+                        {job.match?.confidence !== null && job.match?.confidence !== undefined ? (
+                          <span className="text-ink-subtle">
+                            güven %{job.match.confidence}
+                          </span>
+                        ) : null}
+                        {job.match?.notified_at ? (
+                          <Badge variant="info">bildirildi</Badge>
+                        ) : null}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {job.match?.analysis_status && job.match.analysis_status !== "completed" ? (
+                        <Badge
+                          variant={
+                            job.match.analysis_status === "failed"
+                              ? "danger"
+                              : job.match.analysis_status === "running"
+                                ? "accent"
+                                : "muted"
+                          }
+                        >
+                          {analysisLabels[job.match.analysis_status] ?? job.match.analysis_status}
+                        </Badge>
+                      ) : null}
                       <ScoreBadge score={job.match?.score ?? null} />
                       {job.match?.status === "dismissed" ? (
                         <Button

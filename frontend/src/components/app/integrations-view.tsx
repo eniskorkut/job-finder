@@ -11,7 +11,6 @@ import {
   Plug,
   RefreshCw,
   Save,
-  Send,
   ServerCog,
   ShieldCheck,
   Trash2,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { ErrorState } from "@/components/app/error-state";
+import { TelegramCard } from "@/components/app/telegram-card";
 import { TransientAlert } from "@/components/app/transient-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export function IntegrationsView() {
           />
         ))}
 
-        {telegram ? <TelegramCard integration={telegram} /> : null}
+        {telegram ? <TelegramCard onChanged={integrations.refetch} /> : null}
       </div>
 
       <Card>
@@ -178,18 +178,30 @@ export function IntegrationsView() {
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2">
               <ServerCog aria-hidden className="size-4" strokeWidth={1.75} />
-              DeepSeek (ortak)
+              {deepseek.label ?? "DeepSeek / OpenAI-uyumlu LLM"}
             </CardTitle>
-            <Badge variant={deepseek.configured ? "success" : "neutral"}>
+            <Badge variant={deepseek.configured ? "success" : "warning"}>
               {deepseek.configured ? "yapılandırıldı" : "yapılandırılmadı"}
             </Badge>
           </div>
           <CardDescription>{deepseek.note}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-[12.5px]">
-          <Row label="Model" value={deepseek.model} />
-          <Row label="Base URL" value={deepseek.base_url} mono />
+          <Row label="Model" value={deepseek.model ?? "—"} />
+          <Row label="Endpoint" value={deepseek.endpoint_host ?? "—"} mono />
+          <Row label="Yol" value={deepseek.endpoint_path ?? "—"} mono />
+          <Row label="Prompt sürümü" value={deepseek.prompt_version ?? "—"} />
+          <Row
+            label="Eşzamanlılık"
+            value={deepseek.max_concurrency ? `en fazla ${deepseek.max_concurrency} istek` : "—"}
+          />
           <Row label="Kullanım" value="Tüm kullanıcılar için ortak (sunucu anahtarı)" />
+          {!deepseek.configured ? (
+            <p className="rounded-[var(--radius-card)] bg-warning-soft px-3 py-2 text-[11.5px] leading-4 text-warning">
+              LLM yapılandırılmadı: backend/.env.local içinde DEEPSEEK_API_KEY,
+              DEEPSEEK_BASE_URL ve DEEPSEEK_MODEL tanımlanmalı.
+            </p>
+          ) : null}
           <p className="text-[11.5px] leading-4 text-ink-subtle">
             Anahtar yalnızca backend/.env.local içinde tutulur; panelden
             girilmez ve hiçbir zaman tarayıcıya gönderilmez.
@@ -680,38 +692,6 @@ function AccountRow({
         )}
       </div>
     </li>
-  );
-}
-
-function TelegramCard({ integration }: { integration: Integration }) {
-  return (
-    <Card data-testid="integration-card-telegram">
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2">
-            <Send aria-hidden className="size-4" strokeWidth={1.75} />
-            {integration.label}
-          </CardTitle>
-          <Badge variant="neutral">3. aşama</Badge>
-        </div>
-        <CardDescription>
-          Kullanıcı bazlı bot token ve Chat ID 3. aşamada girilecek. Bu alanlar
-          şimdilik devre dışı; hiçbir Telegram çağrısı yapılmıyor.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <Field label="Bot token" htmlFor="telegram-token">
-          <Input id="telegram-token" value="" disabled placeholder="3. aşamada" readOnly />
-        </Field>
-        <Field label="Chat ID" htmlFor="telegram-chat">
-          <Input id="telegram-chat" value="" disabled placeholder="3. aşamada" readOnly />
-        </Field>
-        <Button variant="secondary" disabled>
-          <Plug aria-hidden className="size-3.5" strokeWidth={2} />
-          Bağlan (3. aşama)
-        </Button>
-      </CardContent>
-    </Card>
   );
 }
 

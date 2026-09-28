@@ -51,25 +51,27 @@ function payload(overrides: Record<string, unknown> = {}) {
         description: "Telegram bildirimi",
         category: "notification",
         status: "disconnected",
-        available: false,
-        unavailable_reason: "3. aşamada",
+        available: true,
+        unavailable_reason: null,
         phase: "phase-3",
         accounts: [],
         detail: null,
         last_synced_at: null,
         oauth_client: null,
-        capabilities: { implemented: false },
+        capabilities: { implemented: true },
       },
     ],
     deepseek: {
       provider: "deepseek",
-      label: "DeepSeek",
-      model: "deepseek-v4-flash",
-      base_url: "https://opencode.ai/zen/go/v1",
-      shared: true,
-      enabled: false,
+      label: "DeepSeek / OpenAI-uyumlu LLM",
       configured: true,
-      phase: "phase-3",
+      shared: true,
+      enabled: true,
+      model: "deepseek-v4-flash",
+      endpoint_host: "opencode.ai",
+      endpoint_path: "/zen/go/v1/chat/completions",
+      prompt_version: "phase3-v1",
+      max_concurrency: 3,
       note: "Anahtar backend/.env.local içinde tutulur.",
     },
   };
@@ -82,8 +84,30 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+const telegramStatus = {
+  provider: "telegram",
+  status: "disconnected",
+  connected: false,
+  bot_username: null,
+  chat_id: null,
+  token_hint: null,
+  has_token: false,
+  last_error: null,
+  last_error_class: null,
+  last_checked_at: null,
+  last_notification_at: null,
+  linked_at: null,
+  available: true,
+  phase: "phase-3",
+  message: "Bot token ve Chat ID girip doğrulayın.",
+  hint: "Botunuza /start yazın.",
+};
+
 function renderWith(overrides: Record<string, unknown> = {}) {
   const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    if (String(url).includes("/telegram/status")) {
+      return Promise.resolve(jsonResponse(telegramStatus));
+    }
     if (init?.method === "GET" || !init?.method) {
       return Promise.resolve(jsonResponse(payload(overrides)));
     }
@@ -114,7 +138,9 @@ describe("IntegrationsView", () => {
     expect(await screen.findByText("Gmail")).toBeInTheDocument();
     expect(screen.getByText("Hotmail / Outlook")).toBeInTheDocument();
     expect(screen.getByText("Telegram")).toBeInTheDocument();
-    expect(screen.getByText("3. aşama")).toBeInTheDocument();
+    // real per-user card: setup form instead of a phase-3 placeholder
+    expect(screen.getByText("kişiye özel")).toBeInTheDocument();
+    expect(screen.getByLabelText("Bot token")).toBeInTheDocument();
     expect(screen.getByText("yapılandırıldı")).toBeInTheDocument();
 
     // The shared DeepSeek key is never entered from the panel.

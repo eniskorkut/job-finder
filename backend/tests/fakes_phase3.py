@@ -105,7 +105,7 @@ class FakeLlmClient:
             "enabled": True,
         }
 
-    async def extract_cv_profile(self, *, cv_text: str):
+    async def extract_cv_profile(self, *, cv_text: str, **kwargs):
         self.state.profile_calls += 1
         if self.state.profile_error is not None:
             raise self.state.profile_error

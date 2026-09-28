@@ -73,7 +73,7 @@ export function AnalysisPanel({
         </div>
         <CardDescription>
           Puan, CV ile ilan gereksinimlerinin uyum derecesidir; işe alınma
-          olasılığı değildir.
+          olasılığı değildir. Örnek (mock) kayıtlar analiz edilmez.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

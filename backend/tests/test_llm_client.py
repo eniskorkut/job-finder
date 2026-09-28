@@ -19,6 +19,7 @@ from app.integrations.prompts import build_scoring_user_message
 from app.integrations.http import ProviderHttpClient
 from app.models.enums import ErrorClass
 from app.schemas.llm import LlmMatchResult, LlmOutputError, extract_json_object
+from app.core.config import settings
 from app.services.cv_privacy import redact_pii
 
 VALID_PAYLOAD = {
@@ -46,7 +47,7 @@ def completion_body(content: str, *, status: int = 200) -> httpx.Response:
     )
 
 
-def make_client(handler, *, max_attempts: int = 3, sleep=None, gate=None) -> DeepSeekScoringClient:
+def make_client(handler, *, max_attempts: int = 3, sleep=None, gate=None, **kwargs) -> DeepSeekScoringClient:
     recorder = sleep if sleep is not None else AsyncSleepRecorder()
     http = ProviderHttpClient(
         transport=httpx.MockTransport(handler),
@@ -55,13 +56,15 @@ def make_client(handler, *, max_attempts: int = 3, sleep=None, gate=None) -> Dee
         base_delay=0.01,
         max_delay=0.02,
     )
-    return DeepSeekScoringClient(
-        api_key="test-key",
-        base_url="https://llm.test/v1",
-        model="test-model",
-        http=http,
-        gate=gate,
-    )
+    init_kwargs = {
+        "api_key": "test-key",
+        "base_url": "https://llm.test/v1",
+        "model": "test-model",
+        "http": http,
+        "gate": gate,
+    }
+    init_kwargs.update(kwargs)
+    return DeepSeekScoringClient(**init_kwargs)
 
 
 class AsyncSleepRecorder:
@@ -260,6 +263,55 @@ class TestTransportFailures:
         assert "response_format" not in seen_bodies[1]
         assert client.describe()["json_mode"] is False
 
+    async def test_gateway_routing_headers_are_sent(self):
+        """OpenCode-style gateways need a stable session header + user agent."""
+        seen: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(dict(request.headers))
+            return completion_body(json.dumps(VALID_PAYLOAD))
+
+        client = make_client(handler)
+        async with client:
+            await client.complete_json(system="s", user="u", schema=LlmMatchResult)
+
+        session_header = "x-opencode-session"
+        assert session_header in seen
+        import uuid
+        uuid.UUID(seen[session_header])
+        assert seen["user-agent"] == "job-finder/1.0"
+        # The session id is derived once per installation and stays stable.
+        assert client.request_headers()[session_header] == client.session_id
+
+    async def test_extra_headers_from_config_are_applied(self, monkeypatch):
+        monkeypatch.setattr(
+            settings, "llm_extra_headers", '{"X-Organization": "team", "X-Bad": null}'
+        )
+        seen: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.update(dict(request.headers))
+            return completion_body(json.dumps(VALID_PAYLOAD))
+
+        client = make_client(handler)
+        async with client:
+            await client.complete_json(system="s", user="u", schema=LlmMatchResult)
+        assert seen["x-organization"] == "team"
+        assert "x-bad" not in seen
+
+    async def test_invalid_extra_headers_json_is_ignored(self, monkeypatch):
+        monkeypatch.setattr(settings, "llm_extra_headers", "{bozuk json")
+        client = DeepSeekScoringClient(api_key="k", base_url="https://llm.test/v1", model="m")
+        assert client.extra_headers == {}
+
+    async def test_session_header_is_mandatory(self, monkeypatch):
+        monkeypatch.setattr(settings, "llm_session_header", "")
+        client = DeepSeekScoringClient(api_key="k", base_url="https://llm.test/v1", model="m")
+        headers = client.request_headers()
+        assert "x-opencode-session" in headers
+        import uuid
+        uuid.UUID(headers["x-opencode-session"])
+
     async def test_unconfigured_client_explains_itself(self):
         client = DeepSeekScoringClient(api_key="", base_url="", model="")
         assert client.configured is False
@@ -351,3 +403,44 @@ class TestPromptSafety:
         assert "TR12" not in redacted
         assert "trk=tracking" not in redacted
         assert "Python" in redacted
+
+    async def test_model_prefix_is_stripped_in_requests(self):
+        seen_bodies = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_bodies.append(json.loads(request.read()))
+            return completion_body(json.dumps(VALID_PAYLOAD))
+
+        client = make_client(handler, model="opencode-go/deepseek-v4.1-flash")
+        async with client:
+            await client.complete_json(system="s", user="u", schema=LlmMatchResult)
+        assert seen_bodies[0]["model"] == "deepseek-v4.1-flash"
+
+    async def test_huge_max_tokens_is_capped(self):
+        seen_bodies = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_bodies.append(json.loads(request.read()))
+            return completion_body(json.dumps(VALID_PAYLOAD))
+
+        client = make_client(handler, max_tokens=384000)
+        async with client:
+            await client.complete_json(system="s", user="u", schema=LlmMatchResult, max_tokens=384000)
+        assert seen_bodies[0]["max_tokens"] <= 2000
+
+    async def test_400_response_logs_body_without_api_key(self, caplog):
+        secret_key = "sk-super-secret-key-12345"
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            # Emulate an error response containing the key or error details
+            return httpx.Response(400, text=f"Error occurred with {secret_key}")
+
+        client = make_client(handler, api_key=secret_key)
+        async with client:
+            with pytest.raises(ProviderError):
+                await client.complete_json(system="s", user="u", schema=LlmMatchResult)
+
+        # Ensure the raw API key was NOT logged
+        assert secret_key not in caplog.text
+        assert "[REDACTED]" in caplog.text
+

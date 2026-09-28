@@ -147,7 +147,14 @@ describe("JobList", () => {
       items: [
         {
           ...jobPage.items[0],
-          match: { ...jobPage.items[0].match, score: null, analysis_status: "pending", confidence: null },
+          is_mock: false,
+          match: {
+            ...jobPage.items[0].match,
+            score: null,
+            analysis_status: "pending",
+            confidence: null,
+            is_mock: false,
+          },
         },
       ],
     };

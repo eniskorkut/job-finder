@@ -10,13 +10,18 @@ never leaves the backend.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
+import socket
 import time
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, TypeVar
 from urllib.parse import urlsplit
 
+import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
@@ -44,15 +49,38 @@ logger = logging.getLogger("jobhunter.llm")
 T = TypeVar("T", bound=BaseModel)
 
 
+def clean_model_name(model: str | None) -> str:
+    """Strip OpenCode-specific prefix from model names for OpenAI-compatible endpoints."""
+    m = (model or "").strip()
+    if m.startswith("opencode-go/"):
+        m = m[len("opencode-go/"):].strip()
+    return m
+
+
+def build_scoring_session_id(
+    *,
+    user_id: str | int | None = None,
+    job_id: str | int | None = None,
+    cv_checksum: str | None = None,
+) -> str:
+    """Generate a safe, deterministic, PII-free session UUID for scoring operations."""
+    seed = f"job-finder:{user_id or 'anon'}:{job_id or 'job'}:{cv_checksum or 'cv'}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
+
+
 def build_chat_completions_url(base_url: str) -> str:
     """Resolve an OpenAI-compatible chat completions endpoint.
 
     Accepts a base URL with or without a trailing ``/v1`` and a full endpoint
     URL, so a misconfigured deployment cannot silently produce a bad path.
+    Ensures the endpoint is strictly ``/chat/completions`` and never routes
+    to the responses API.
     """
     base = (base_url or "").strip().rstrip("/")
     if not base:
         raise ValueError("LLM base URL tanımlı değil.")
+    if base.endswith("/responses"):
+        base = base[:-len("/responses")].rstrip("/")
     if base.endswith("/chat/completions"):
         return base
     if base.endswith("/v1"):
@@ -135,14 +163,17 @@ class DeepSeekScoringClient(JobScoringClient):
     ) -> None:
         self.api_key = (api_key if api_key is not None else settings.deepseek_api_key).strip()
         self.base_url = (base_url if base_url is not None else settings.deepseek_base_url).strip()
-        self.model = (model if model is not None else settings.deepseek_model).strip()
+        raw_model = (model if model is not None else settings.deepseek_model).strip()
+        self.model = clean_model_name(raw_model)
         self.timeout_seconds = (
             timeout_seconds if timeout_seconds is not None else settings.llm_timeout_seconds
         )
         self.max_attempts = (
             max_attempts if max_attempts is not None else settings.llm_retry_max_attempts
         )
-        self.max_tokens = max_tokens if max_tokens is not None else settings.llm_max_tokens
+        raw_max_tokens = max_tokens if max_tokens is not None else settings.llm_max_tokens
+        # Ensure max_tokens stays well within supported model bounds (1000-2000 for scoring)
+        self.max_tokens = min(max(raw_max_tokens, 100), 2000)
         self.temperature = temperature if temperature is not None else settings.llm_temperature
         self.json_mode = settings.llm_json_mode if json_mode is None else json_mode
         self.prompt_version = prompt_version or PROMPT_VERSION
@@ -151,8 +182,59 @@ class DeepSeekScoringClient(JobScoringClient):
         self._gate = gate or llm_gate
         self._json_mode_supported = self.json_mode
         self._json_mode_checked = False
+        self.session_id = self._resolve_session_id()
+        self.extra_headers = self._resolve_extra_headers()
 
     # --- lifecycle ------------------------------------------------------
+    @staticmethod
+    def _resolve_session_id() -> str:
+        """Stable deterministic UUID per installation so gateway routing/caching stays warm."""
+        if settings.llm_session_id:
+            return settings.llm_session_id
+        seed = f"job-finder:{socket.gethostname()}:{settings.session_secret}"
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, seed))
+
+    @staticmethod
+    def _resolve_extra_headers() -> dict[str, str]:
+        raw = (settings.llm_extra_headers or "").strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("LLM_EXTRA_HEADERS geçerli JSON değil; yok sayıldı.")
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        return {
+            str(key): str(value)
+            for key, value in parsed.items()
+            if value is not None
+        }
+
+    def request_headers(self, session_id: str | None = None) -> dict[str, str]:
+        sid = session_id or self.session_id or self._resolve_session_id()
+        if not sid:
+            sid = str(uuid.uuid5(uuid.NAMESPACE_URL, "job-finder:fallback"))
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": settings.llm_user_agent or "job-finder/1.0",
+            "x-opencode-session": sid,
+        }
+        header_name = (settings.llm_session_header or "").strip()
+        if header_name and header_name != "x-opencode-session":
+            headers[header_name] = sid
+        headers.update(self.extra_headers)
+        return headers
+
+    def _safe_log_400(self, text: str) -> None:
+        """Log HTTP 400 response body in full, strictly never logging the API key."""
+        clean_body = text
+        if self.api_key:
+            clean_body = clean_body.replace(self.api_key, "[REDACTED]")
+        logger.warning("DeepSeek/OpenCode HTTP 400 yanıt gövdesi: %s", clean_body)
+
     @property
     def configured(self) -> bool:
         return bool(self.api_key and self.model and self.base_url)
@@ -201,6 +283,8 @@ class DeepSeekScoringClient(JobScoringClient):
             "json_mode": bool(self._json_mode_supported),
             "max_concurrency": self._gate.limit,
             "enabled": self.configured,
+            "session_header": settings.llm_session_header or None,
+            "session_id_set": bool(self.session_id),
         }
 
     # --- transport ------------------------------------------------------
@@ -211,6 +295,7 @@ class DeepSeekScoringClient(JobScoringClient):
         user: str,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session_id: str | None = None,
     ) -> tuple[str, LlmCallInfo, int]:
         if not self.configured:
             raise ProviderError(
@@ -220,19 +305,24 @@ class DeepSeekScoringClient(JobScoringClient):
                 retryable=False,
             )
 
+        effective_model = clean_model_name(self.model)
+        requested_max_tokens = self.max_tokens if max_tokens is None else max_tokens
+        effective_max_tokens = min(max(requested_max_tokens, 100), 2000)
+
         body: dict[str, Any] = {
-            "model": self.model,
+            "model": effective_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             "temperature": self.temperature if temperature is None else temperature,
-            "max_tokens": self.max_tokens if max_tokens is None else max_tokens,
+            "max_tokens": effective_max_tokens,
             "stream": False,
         }
         if self._json_mode_supported:
             body["response_format"] = {"type": "json_object"}
 
+        headers = self.request_headers(session_id=session_id)
         started = time.monotonic()
         async with self._gate.slot():
             response = await self.http.request(
@@ -240,36 +330,44 @@ class DeepSeekScoringClient(JobScoringClient):
                 self.endpoint,
                 provider=self.provider,
                 allowed_hosts=self.allowed_hosts,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json_body=body,
                 expected=(200, 400),
             )
         latency_ms = int((time.monotonic() - started) * 1000)
 
-        if response.status_code == 400 and self._json_mode_supported:
-            # Some gateways reject response_format: remember that and retry.
-            logger.warning("LLM response_format desteklenmiyor; JSON modu kapatıldı.")
-            self._json_mode_supported = False
-            self._json_mode_checked = True
-            body.pop("response_format", None)
-            started = time.monotonic()
-            async with self._gate.slot():
-                response = await self.http.request(
-                    "POST",
-                    self.endpoint,
-                    provider=self.provider,
-                    allowed_hosts=self.allowed_hosts,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json_body=body,
-                    expected=(200,),
-                )
-            latency_ms = int((time.monotonic() - started) * 1000)
+        if response.status_code == 400:
+            self._safe_log_400(response.text)
+            if self._json_mode_supported:
+                # Some gateways reject response_format: remember that and retry.
+                logger.warning("LLM response_format desteklenmiyor; JSON modu kapatıldı.")
+                self._json_mode_supported = False
+                self._json_mode_checked = True
+                body.pop("response_format", None)
+                started = time.monotonic()
+                async with self._gate.slot():
+                    response = await self.http.request(
+                        "POST",
+                        self.endpoint,
+                        provider=self.provider,
+                        allowed_hosts=self.allowed_hosts,
+                        headers=self.request_headers(session_id=session_id),
+                        json_body=body,
+                        expected=(200, 400),
+                    )
+                latency_ms = int((time.monotonic() - started) * 1000)
+                if response.status_code == 400:
+                    self._safe_log_400(response.text)
+
+        if response.status_code == 400:
+            clean_body = response.text.replace(self.api_key, "[REDACTED]") if self.api_key else response.text
+            raise ProviderError(
+                f"{self.provider} beklenmeyen yanıt (HTTP 400). {clean_body[:300].replace(chr(10), ' ')}",
+                provider=self.provider,
+                error_class=ErrorClass.PERMANENT,
+                status_code=400,
+                retryable=False,
+            )
 
         payload = response.json() if response.content else {}
         if not isinstance(payload, dict):
@@ -285,7 +383,7 @@ class DeepSeekScoringClient(JobScoringClient):
             finish_reason = choices[0].get("finish_reason")
 
         info = LlmCallInfo(
-            model=str(payload.get("model") or self.model),
+            model=str(payload.get("model") or effective_model),
             latency_ms=latency_ms,
             attempts=self.max_attempts,
             prompt_tokens=usage.get("prompt_tokens"),
@@ -305,9 +403,12 @@ class DeepSeekScoringClient(JobScoringClient):
         user: str,
         schema: type[T],
         max_tokens: int | None = None,
+        session_id: str | None = None,
     ) -> tuple[T, LlmCallInfo]:
         """Call the model and validate its JSON, with a single repair attempt."""
-        content, info, _ = await self._chat(system=system, user=user, max_tokens=max_tokens)
+        content, info, _ = await self._chat(
+            system=system, user=user, max_tokens=max_tokens, session_id=session_id
+        )
         validation_error = ""
         try:
             return schema.model_validate(extract_json_object(content)), info
@@ -324,7 +425,9 @@ class DeepSeekScoringClient(JobScoringClient):
             f"{user}\n\n{REPAIR_INSTRUCTION}\n"
             f"Doğrulama hatası: {validation_error[:300]}"
         )
-        content, info, _ = await self._chat(system=system, user=repair_user, max_tokens=max_tokens)
+        content, info, _ = await self._chat(
+            system=system, user=repair_user, max_tokens=max_tokens, session_id=session_id
+        )
         try:
             return schema.model_validate(extract_json_object(content)), info
         except (LlmOutputError, ValidationError) as second_error:
@@ -334,12 +437,19 @@ class DeepSeekScoringClient(JobScoringClient):
             ) from second_error
 
     # --- use cases ------------------------------------------------------
-    async def extract_cv_profile(self, *, cv_text: str) -> tuple[LlmCVProfile, LlmCallInfo]:
+    async def extract_cv_profile(
+        self,
+        *,
+        cv_text: str,
+        session_id: str | None = None,
+        max_tokens: int | None = None,
+    ) -> tuple[LlmCVProfile, LlmCallInfo]:
         return await self.complete_json(
             system=PROFILE_SYSTEM_PROMPT,
             user=build_profile_user_message(cv_text=cv_text),
             schema=LlmCVProfile,
-            max_tokens=min(self.max_tokens, 900),
+            max_tokens=max_tokens or self.max_tokens,
+            session_id=session_id,
         )
 
     async def score_job(
@@ -354,6 +464,7 @@ class DeepSeekScoringClient(JobScoringClient):
         description: str | None,
         description_status: str,
         preferences: dict,
+        session_id: str | None = None,
     ) -> tuple[LlmMatchResult, LlmCallInfo]:
         return await self.complete_json(
             system=SCORING_SYSTEM_PROMPT,
@@ -369,7 +480,71 @@ class DeepSeekScoringClient(JobScoringClient):
                 preferences=preferences,
             ),
             schema=LlmMatchResult,
+            session_id=session_id,
         )
+
+
+async def run_opencode_smoke_test(
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    session_id: str | None = None,
+    timeout_seconds: float = 30.0,
+) -> dict[str, Any]:
+    """Execute smoke test against OpenCode Go Chat Completions endpoint.
+
+    POST https://opencode.ai/zen/go/v1/chat/completions
+    headers:
+    - Authorization: Bearer <key>
+    - Content-Type: application/json
+    - User-Agent: job-finder/1.0
+    - x-opencode-session: <stable-session-id-uuid>
+    body:
+    {
+      "model": "deepseek-v4.1-flash",
+      "messages": [{"role": "user", "content": "Reply only with OK"}],
+      "max_tokens": 50
+    }
+    """
+    key = (api_key if api_key is not None else settings.deepseek_api_key).strip()
+    if not key:
+        raise ValueError("DEEPSEEK_API_KEY tanımlı değil.")
+
+    base = (base_url if base_url is not None else settings.deepseek_base_url).strip()
+    endpoint = build_chat_completions_url(base)
+
+    sid = session_id or str(uuid.uuid5(uuid.NAMESPACE_URL, "job-finder:opencode-smoke-test"))
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": settings.llm_user_agent or "job-finder/1.0",
+        "x-opencode-session": sid,
+    }
+    body = {
+        "model": "deepseek-v4.1-flash",
+        "messages": [{"role": "user", "content": "Reply only with OK"}],
+        "max_tokens": 50,
+    }
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds)) as client:
+        resp = await client.post(endpoint, headers=headers, json=body)
+        if resp.status_code == 400:
+            clean_body = resp.text.replace(key, "[REDACTED]")
+            logger.warning("Smoke test HTTP 400 yanıt gövdesi: %s", clean_body)
+        resp.raise_for_status()
+        payload = resp.json()
+
+    choices = payload.get("choices") or []
+    content = ""
+    if choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message") or {}
+        content = str(msg.get("content") or "").strip()
+
+    if "OK" not in content:
+        raise ValueError(f"Smoke test unexpected response content: {content!r}")
+
+    return payload
 
 
 __all__ = [
@@ -378,6 +553,9 @@ __all__ = [
     "LlmCallInfo",
     "LlmConcurrencyGate",
     "build_chat_completions_url",
+    "build_scoring_session_id",
+    "clean_model_name",
     "llm_gate",
     "llm_host_allowlist",
+    "run_opencode_smoke_test",
 ]

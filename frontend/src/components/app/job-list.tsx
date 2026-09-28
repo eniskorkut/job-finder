@@ -354,7 +354,9 @@ export function JobList({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {job.match?.analysis_status && job.match.analysis_status !== "completed" ? (
+                      {!job.is_mock &&
+                      job.match?.analysis_status &&
+                      job.match.analysis_status !== "completed" ? (
                         <Badge
                           variant={
                             job.match.analysis_status === "failed"

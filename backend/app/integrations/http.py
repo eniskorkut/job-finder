@@ -202,8 +202,16 @@ class ProviderHttpClient:
                 await self._sleep(delay)
                 continue
 
+            # 4xx bodies from gateways usually explain the problem (unsupported
+            # field, unknown model); include a short excerpt for debugging.
+            detail = ""
+            if response.status_code in {400, 404, 409, 422}:
+                try:
+                    detail = " " + response.text[:300].replace("\n", " ")
+                except Exception:  # pragma: no cover - body already consumed
+                    detail = ""
             raise ProviderError(
-                f"{provider} beklenmeyen yanıt (HTTP {response.status_code}).",
+                f"{provider} beklenmeyen yanıt (HTTP {response.status_code}).{detail}",
                 provider=provider,
                 error_class=ErrorClass.PERMANENT,
                 status_code=response.status_code,

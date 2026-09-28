@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     llm_retry_max_attempts: int = 3
     llm_json_mode: bool = True
-    llm_max_tokens: int = 1200
+    llm_max_tokens: int = 2000
     llm_temperature: float = 0.1
     llm_prompt_version: str = "phase3-v1"
     # Bounded context: the CV profile is always sent, this caps the raw excerpt.
@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     llm_job_description_chars: int = 6000
     # Attempts per (user, job, cv version) before a match is parked as failed.
     llm_max_analysis_attempts: int = 3
+    # Some OpenAI-compatible gateways need extra routing headers. OpenCode Go,
+    # for example, asks for a stable session id per conversation.
+    llm_session_header: str = "x-opencode-session"
+    llm_session_id: str = ""  # empty -> derived once per installation
+    llm_user_agent: str = "job-finder/1.0"
+    # JSON object of additional headers, e.g. '{"X-Org": "team"}'
+    llm_extra_headers: str = ""
 
     # --- Phase 3: Telegram (per user, token stored encrypted) -------------
     telegram_api_base: str = "https://api.telegram.org"

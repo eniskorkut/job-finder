@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.integrations.deepseek import DeepSeekScoringClient
+from app.integrations.deepseek import DeepSeekScoringClient, build_scoring_session_id
 from app.integrations.errors import ProviderError
 from app.integrations.prompts import PROMPT_VERSION
 from app.models.cv import CV
@@ -293,13 +293,19 @@ class ScoringRunner:
             text = service.profile_text(cv)
             excerpt = service.scoring_context(cv)
             cv_id = cv.id
+            cv_checksum = cv.checksum
             model = getattr(client, "model", None) or None
 
         if len(text) < MIN_PROFILE_TEXT_CHARS:
             return None, "", "failed", "CV metni profil çıkarmak için çok kısa."
 
         try:
-            profile, info = await client.extract_cv_profile(cv_text=text)  # type: ignore[attr-defined]
+            profile_session_id = build_scoring_session_id(
+                user_id=user_id, job_id="profile", cv_checksum=cv_checksum
+            )
+            profile, info = await client.extract_cv_profile(  # type: ignore[attr-defined]
+                cv_text=text, session_id=profile_session_id
+            )
         except (ProviderError, LlmOutputError) as exc:
             error_class = (
                 exc.error_class if isinstance(exc, ProviderError) else ErrorClass.PERMANENT
@@ -396,6 +402,9 @@ class ScoringRunner:
             db.flush()
 
         try:
+            scoring_session_id = build_scoring_session_id(
+                user_id=user_id, job_id=snapshot["id"], cv_checksum=checksum
+            )
             result, info = await client.score_job(  # type: ignore[attr-defined]
                 candidate_profile=profile,
                 cv_excerpt=excerpt,
@@ -406,6 +415,7 @@ class ScoringRunner:
                 description=snapshot["description"],
                 description_status=snapshot["description_status"],
                 preferences=preferences,
+                session_id=scoring_session_id,
             )
         except (ProviderError, LlmOutputError) as exc:
             error_class = (

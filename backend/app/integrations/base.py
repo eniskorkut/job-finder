@@ -197,7 +197,7 @@ class JobScoringClient(ABC):
         """True when key, base URL and model are all present."""
 
     @abstractmethod
-    async def extract_cv_profile(self, *, cv_text: str) -> tuple[Any, Any]:
+    async def extract_cv_profile(self, *, cv_text: str, **kwargs: Any) -> tuple[Any, Any]:
         """Structured profile extracted from one CV."""
 
     @abstractmethod

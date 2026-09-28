@@ -127,6 +127,141 @@ da bu worker sürecinin içinde çalışır; dördüncü bir süreç gerekmez.
 Frontend tarayıcıdan gelen `/api/v1/*` isteklerini `BACKEND_URL` adresine proxy'ler; böylece
 oturum çerezi birinci taraf olur ve CORS gerekmez.
 
+## BACKEND DOCKER
+
+Backend servisleri (migration, API ve worker) tek Docker image üzerinden Docker Compose ile container olarak çalıştırılabilir.
+Frontend Docker'a dahil edilmez; `localhost:3000` üzerinde geliştirme sunucusu olarak çalışmaya devam eder.
+
+### Mimarî ve Servisler
+
+```text
+                    ┌──────────────────┐
+                    │ backend-migrate  │
+                    │ alembic upgrade  │
+                    └────────┬─────────┘
+                             │ success
+                  ┌──────────┴──────────┐
+                  │                     │
+          ┌───────▼───────┐     ┌──────▼────────┐
+          │ backend-api   │     │ backend-worker │
+          │ FastAPI       │     │ queue/scheduler│
+          │ :8000         │     │ async jobs     │
+          └───────────────┘     └───────────────┘
+                  │                     │
+                  └──────────┬──────────┘
+                             │
+                     persistent volume (job_finder_data)
+                             │
+                   SQLite (WAL) + CV files
+```
+
+- **backend-migrate**: Container ayağa kalktığında `alembic upgrade head` çalıştırır ve başarıyla tamamlanınca çıkar. API ve worker bu servisin başarıyla bitmesini bekler (`condition: service_completed_successfully`).
+- **backend-api**: FastAPI uygulamasını tek Uvicorn process içinde (SQLite ve in-memory rate-limiter uyumu için) çalıştırır. Port `8000:8000` host'a yönlendirilir.
+- **backend-worker**: E-posta tarama, DeepSeek skorlama, Telegram bildirimleri ve zamanlayıcıyı tek async process içinde yürütür.
+- **Persistent Data**: `job_finder_data` named volume `/app/data` dizinine bağlanır; SQLite veritabanı, WAL günlükleri ve CV dosyaları container recreate edilse bile korunur.
+
+### Çalıştırma
+
+Backend (Docker):
+```bash
+docker compose -f compose.backend.yml up -d --build
+```
+
+Frontend (Localhost):
+```bash
+cd frontend
+npm run dev
+```
+
+### Durum ve Loglar
+
+Konteyner durumları:
+```bash
+docker compose -f compose.backend.yml ps
+```
+
+Beklenen durum:
+- `job-finder-backend-migrate-1`: `Exited (0)`
+- `job-finder-backend-api-1`: `Up (healthy)`
+- `job-finder-backend-worker-1`: `Up`
+
+Logları canlı izleme:
+```bash
+# API logları
+docker compose -f compose.backend.yml logs -f backend-api
+
+# Worker logları
+docker compose -f compose.backend.yml logs -f backend-worker
+```
+
+Sağlık kontrolleri:
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/health/ready
+```
+
+### Durdurma
+
+```bash
+docker compose -f compose.backend.yml down
+```
+
+> [!CAUTION]
+> `docker compose -f compose.backend.yml down -v` komutu named volume'u (`job_finder_data`) SİLER!
+> Bu komut tüm veritabanı kayıtlarını, kullanıcı hesaplarını ve yüklenen CV dosyalarını kalıcı olarak yok eder.
+> Normal durdurma için asla `-v` bayrağını kullanmayın.
+
+### Eşzamanlılık ve Performans Ayarları (Concurrency Tuning)
+
+İki kullanıcı için güvenli başlangıç varsayılanları:
+```ini
+SYNC_MAX_ACTIVE_MAILBOXES=4      # Aynı anda taranacak maksimum posta kutusu
+SYNC_MAILBOX_CONCURRENCY=2       # Posta kutusu başına paralel HTTP isteği
+SYNC_HTTP_MAX_CONNECTIONS=10     # httpx bağlantı havuzu tavanı
+LLM_MAX_CONCURRENCY=3            # DeepSeek / OpenCode eşzamanlı istek limiti
+```
+
+Bu değerler `backend/.env.local` üzerinden ihtiyaca ve provider limitlerine göre ölçeklendirilebilir:
+- Sistem kaynakları ve provider kotası genişse `LLM_MAX_CONCURRENCY=5` veya `SYNC_MAX_ACTIVE_MAILBOXES=6` yapılabilir.
+- Rate limit uyarısı sıklaşırsa `LLM_MAX_CONCURRENCY=2` seviyesine çekilmelidir.
+
+---
+
+## SORUN GİDERME (TROUBLESHOOTING)
+
+### 1) API Unhealthy
+- `docker compose -f compose.backend.yml logs backend-api` çıktısını inceleyin.
+- `/health/ready` probe'u veritabanına `SELECT 1` sorgusu atar. Eğer SQLite kilitli veya disk alanı yetersizse 503 döner.
+- Named volume izinlerini kontrol edin: `/app/data` dizini container kullanıcısı tarafından yazılabilir olmalıdır.
+
+### 2) Worker Restart Loop
+- `docker compose -f compose.backend.yml logs backend-worker` ile hata stack trace'ini okuyun.
+- Eksik veritabanı şeması varsa worker açılışta `_check_schema()` ile kontrollü olarak 1 koduyla çıkar. `docker compose -f compose.backend.yml run --rm backend-migrate` çalıştırarak migration durumunu kontrol edin.
+- `backend/.env.local` dosyasındaki `APP_ENCRYPTION_KEY` veya `SESSION_SECRET` değerlerinin formatını doğrulayın.
+
+### 3) Migration Failed
+- `docker compose -f compose.backend.yml logs backend-migrate` çıktısına bakın.
+- SQLite WAL modunda kilitli kalmışsa container'ları durdurup tekrar deneyin:
+  `docker compose -f compose.backend.yml restart backend-migrate`
+
+### 4) SQLite Locked (`sqlite3.OperationalError: database is locked`)
+- SQLite WAL modu ve `busy_timeout=5000` milisaniye aktiftir.
+- İşlemler transaction sürelerini kısa tutacak şekilde tasarlanmıştır. Ancak disk I/O çok yavaşsa `PRAGMA busy_timeout` süresi aşılabilir. Docker Desktop için Virtual Disk performans ayarlarını (VirtioFS) kontrol edin.
+
+### 5) DeepSeek / OpenCode 429 (Rate Limit)
+- Sistem `Retry-After` başlığı varsa bekler, yoksa jitter'lı üstel geri çekilme uygular (maksimum 3 deneme).
+- Sürekli 429 alınıyorsa `backend/.env.local` içinde `LLM_MAX_CONCURRENCY=1` veya `2` değerini ayarlayarak eşzamanlılığı düşürün.
+
+### 6) Gmail `needs_reauth`
+- Google OAuth refresh token süresi dolmuş veya iptal edilmiş olabilir.
+- Web arayüzünde **Entegrasyonlar → Gmail** kartından "Bağlantıyı Yenile" butonuna tıklayarak Google oturumunu tekrar onaylayın.
+
+### 7) Telegram Invalid Token
+- Telegram bot token şifrelenerek saklanır. `APP_ENCRYPTION_KEY` değiştirildiyse eski token çözülemez.
+- Web arayüzünde **Entegrasyonlar → Telegram** bölümünden geçerli bot token'ı ve chat ID'yi yeniden kaydedin.
+
+---
+
 ## Testler
 
 ```bash

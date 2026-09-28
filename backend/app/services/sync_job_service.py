@@ -230,14 +230,29 @@ class SyncRunner:
     # --- execution ------------------------------------------------------
     async def execute(self, job_id: uuid.UUID) -> SyncJobStatus:
         """Dispatch one durable job to its stage: mail scan, scoring, notify."""
-        with self.session_factory() as session:
-            job = session.get(SyncJob, job_id)
-            kind = (job.kind if job else None) or "mail_scan"
-        if kind == "scoring":
-            return await self._execute_scoring(job_id)
-        if kind == "notify":
-            return await self._execute_notify(job_id)
-        return await self._execute_mail_scan(job_id)
+        heartbeat = asyncio.create_task(self._heartbeat_loop(job_id))
+        registered = False
+        try:
+            with self.session_factory() as session:
+                job = session.get(SyncJob, job_id)
+                kind = (job.kind if job else None) or "mail_scan"
+            if kind == "scoring":
+                status = await self._execute_scoring(job_id)
+            elif kind == "notify":
+                status = await self._execute_notify(job_id)
+            else:
+                status = await self._execute_mail_scan(job_id)
+            registered = True
+            return status
+        finally:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
+            if not registered:
+                # If execution crashed or was cancelled before finishing, release job for lease recovery
+                self._release_job(job_id)
 
     async def _execute_scoring(self, job_id: uuid.UUID) -> SyncJobStatus:
         from app.services.scoring_runner import ScoringRunner
@@ -284,9 +299,7 @@ class SyncRunner:
             self._finish_job(job_id, SyncJobStatus.COMPLETED)
             return SyncJobStatus.COMPLETED
 
-        heartbeat = asyncio.create_task(self._heartbeat_loop(job_id))
         semaphore = asyncio.Semaphore(max(1, settings.sync_max_active_mailboxes))
-        registered = False
 
         async def run_account(account_id: uuid.UUID) -> AccountScanOutcome:
             async with semaphore:
@@ -323,18 +336,7 @@ class SyncRunner:
                 self._finish_account(job_id, account_id, outcome)
                 return outcome
 
-        try:
-            results = await asyncio.gather(*(run_account(a) for a in still_queued))
-            registered = True
-        finally:
-            heartbeat.cancel()
-            try:
-                await heartbeat
-            except asyncio.CancelledError:
-                pass
-            if not registered:
-                # Lease recovery will pick the job up again.
-                self._release_job(job_id)
+        results = await asyncio.gather(*(run_account(a) for a in still_queued))
 
         status = self._final_status(results)
         self._finish_job(job_id, status)
@@ -344,14 +346,19 @@ class SyncRunner:
         interval = max(2, settings.sync_heartbeat_seconds)
         while True:
             await asyncio.sleep(interval)
-            with self.session_factory() as session:
-                job = session.get(SyncJob, job_id)
-                if job is None:
-                    return
-                SyncJobRepository(session).heartbeat(
-                    job, lease_seconds=settings.sync_lease_seconds
-                )
-                session.commit()
+            try:
+                with self.session_factory() as session:
+                    job = session.get(SyncJob, job_id)
+                    if job is None or job.status != SyncJobStatus.RUNNING.value:
+                        return
+                    SyncJobRepository(session).heartbeat(
+                        job, lease_seconds=settings.sync_lease_seconds
+                    )
+                    session.commit()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Heartbeat başarısız (job=%s): %s", job_id, exc)
 
     def _is_cancelled(self, job_id: uuid.UUID) -> bool:
         with self.session_factory() as session:
@@ -520,18 +527,40 @@ class SyncRunner:
             session.commit()
 
     # --- loop -----------------------------------------------------------
-    async def run_forever(self, *, once: bool = False, poll_seconds: float | None = None) -> int:
+    async def run_forever(
+        self,
+        *,
+        once: bool = False,
+        poll_seconds: float | None = None,
+        shutdown_event: asyncio.Event | None = None,
+    ) -> int:
         processed = 0
         self.recover()
         last_scheduler_tick: datetime | None = None
+        poll_timeout = poll_seconds or settings.worker_poll_seconds
+
         while True:
+            if shutdown_event is not None and shutdown_event.is_set():
+                logger.info("İşçi kontrollü şekilde durduruldu (graceful shutdown).")
+                return processed
+
+            # Stale / crashed worker jobs whose lease expired get recovered
+            self.recover()
+
             job_id = await asyncio.to_thread(self.claim)
             if job_id is None:
                 if once:
                     return processed
                 last_scheduler_tick = await self._scheduler_tick(last_scheduler_tick)
-                await asyncio.sleep(poll_seconds or settings.worker_poll_seconds)
+                if shutdown_event is not None:
+                    try:
+                        await asyncio.wait_for(shutdown_event.wait(), timeout=poll_timeout)
+                    except asyncio.TimeoutError:
+                        pass
+                else:
+                    await asyncio.sleep(poll_timeout)
                 continue
+
             logger.info("İş alındı: %s", job_id)
             status = await self.execute(job_id)
             logger.info("İş bitti: %s -> %s", job_id, status)

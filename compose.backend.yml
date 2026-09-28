@@ -1,0 +1,53 @@
+name: job-finder
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  image: job-finder-backend:latest
+  volumes:
+    - job_finder_data:/app/data
+    - ./backend/.env.local:/app/.env.local:ro
+  environment:
+    - DATABASE_URL=sqlite:////app/data/jobhunter.db
+    - DATA_DIR=/app/data
+    - FRONTEND_URL=http://localhost:3000
+    - BACKEND_URL=http://localhost:8000
+
+services:
+  backend-migrate:
+    <<: *backend-common
+    command: alembic upgrade head
+    restart: "no"
+
+  backend-api:
+    <<: *backend-common
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    ports:
+      - "8000:8000"
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  backend-worker:
+    <<: *backend-common
+    command: python -m app.worker
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 45s
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+
+volumes:
+  job_finder_data:
+    name: job_finder_data

@@ -8,6 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from sqlalchemy import text
+
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import install_secret_filter
@@ -31,9 +33,8 @@ def create_app() -> FastAPI:
         title=f"{settings.app_name} API",
         version="0.1.0",
         description=(
-            "Job Hunter - phase 1: user management, sessions, preferences and mock jobs. "
-            "Gmail / Outlook / DeepSeek / Telegram integration endpoints answer 501 until "
-            "their phase is implemented."
+            "Job Hunter API: user management, mailbox scanning, "
+            "LLM scoring and notifications."
         ),
         lifespan=lifespan,
     )
@@ -72,6 +73,19 @@ def create_app() -> FastAPI:
             "app": settings.app_name,
             "environment": settings.environment,
         }
+
+    @app.get("/health/ready", tags=["meta"])
+    def readiness() -> JSONResponse:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return JSONResponse(status_code=200, content={"status": "ready"})
+        except Exception as exc:
+            logger.warning("Readiness probe failed: %s", exc)
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "detail": "Database unavailable"},
+            )
 
     app.include_router(api_router)
     return app

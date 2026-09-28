@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import signal
 import sys
 
 from sqlalchemy import inspect, text
@@ -55,6 +56,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+async def run_worker(
+    runner: SyncRunner,
+    *,
+    once: bool = False,
+    poll_seconds: float | None = None,
+    shutdown_event: asyncio.Event | None = None,
+) -> int:
+    event = shutdown_event or asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def _on_signal(sig_name: str) -> None:
+        logger.info("Kapatma sinyali alındı (%s), işçi durduruluyor...", sig_name)
+        event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, lambda s=sig.name: _on_signal(s))
+        except (NotImplementedError, AttributeError, RuntimeError):
+            try:
+                signal.signal(sig, lambda _signum, _frame, s=sig.name: _on_signal(s))
+            except Exception:
+                pass
+
+    return await runner.run_forever(
+        once=once, poll_seconds=poll_seconds, shutdown_event=event
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -88,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         processed = asyncio.run(
-            runner.run_forever(once=args.once, poll_seconds=args.poll_seconds)
+            run_worker(runner, once=args.once, poll_seconds=args.poll_seconds)
         )
     except KeyboardInterrupt:  # pragma: no cover - manual stop
         logger.info("İşçi durduruldu.")

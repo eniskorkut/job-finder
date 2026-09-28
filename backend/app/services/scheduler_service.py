@@ -31,7 +31,7 @@ MAX_BACKOFF_MULTIPLIER = 6
 
 
 def clamp_interval(hours: int | None) -> int:
-    value = hours or 24
+    value = 24 if hours is None else int(hours)
     return max(settings.scheduler_min_interval_hours, min(settings.scheduler_max_interval_hours, value))
 
 
@@ -132,6 +132,8 @@ class SchedulerService:
 
             # Atomic claim: whoever flips next_scan_at owns this run.
             interval = clamp_interval(preference.scan_interval_hours)
+            # synchronize_session=False: the claim is decided by the database,
+            # not by comparing naive (SQLite) and aware datetimes in Python.
             claimed = session.execute(
                 update(UserPreference)
                 .where(
@@ -140,7 +142,8 @@ class SchedulerService:
                     UserPreference.next_scan_at.is_not(None),
                     UserPreference.next_scan_at <= now,
                 )
-                .values(next_scan_at=now + timedelta(hours=interval))
+                .values(next_scan_at=now + timedelta(hours=interval)),
+                execution_options={"synchronize_session": False},
             )
             if not claimed.rowcount:
                 session.rollback()

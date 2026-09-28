@@ -299,6 +299,22 @@ def fake_providers():
     return _factory
 
 
+@pytest.fixture
+def telegram_ready(db, user1):
+    """user1 with a verified (fake) Telegram bot + chat, token encrypted."""
+    import asyncio
+
+    from app.services.telegram_service import TelegramConfigService
+    from tests.fakes_phase3 import FakeTelegramState, fake_telegram_factory
+
+    state = FakeTelegramState()
+    state.register_chat("424242")
+    service = TelegramConfigService(db, client_factory=fake_telegram_factory(state))
+    asyncio.run(service.save_config(user1, bot_token=state.token, chat_id="424242"))
+    db.commit()
+    return state
+
+
 @dataclass
 class ScanResult:
     """Per-mailbox result of a scan run (mirrors SyncJobAccount)."""

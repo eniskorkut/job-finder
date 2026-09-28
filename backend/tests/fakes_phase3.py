@@ -55,6 +55,9 @@ def match_result(
 @dataclass
 class FakeLlmState:
     profile: dict = field(default_factory=lambda: dict(DEFAULT_PROFILE))
+    # Optional resolvers let one fake serve several users (see the E2E test).
+    profile_resolver: object = None
+    score_resolver: object = None
     score_by_title: dict[str, int] = field(default_factory=dict)
     default_score: int = 80
     confidence: int = 80
@@ -106,7 +109,10 @@ class FakeLlmClient:
         self.state.profile_calls += 1
         if self.state.profile_error is not None:
             raise self.state.profile_error
-        return LlmCVProfile.model_validate(self.state.profile), call_info(self.model)
+        payload = self.state.profile
+        if callable(self.state.profile_resolver):
+            payload = self.state.profile_resolver(cv_text)
+        return LlmCVProfile.model_validate(payload), call_info(self.model)
 
     async def score_job(self, **kwargs):
         self.state.score_calls.append(kwargs)
@@ -114,7 +120,14 @@ class FakeLlmClient:
         error = self.state.score_errors_by_title.get(title) or self.state.score_error
         if error is not None:
             raise error
-        score = self.state.score_by_title.get(title, self.state.default_score)
+        if callable(self.state.score_resolver):
+            score = int(
+                self.state.score_resolver(
+                    kwargs.get("candidate_profile") or {}, title
+                )
+            )
+        else:
+            score = self.state.score_by_title.get(title, self.state.default_score)
         return (
             match_result(score, confidence=self.state.confidence),
             call_info(self.model),

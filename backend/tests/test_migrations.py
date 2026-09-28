@@ -27,6 +27,10 @@ EXPECTED_TABLES = {
     "sync_checkpoints",
     "processed_messages",
     "job_sources",
+    # phase 3
+    "cv_profiles",
+    "llm_usage",
+    "scoring_items",
 }
 
 

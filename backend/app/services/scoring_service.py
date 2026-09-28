@@ -21,7 +21,7 @@ from app.models.user import User
 from app.repositories.cvs import CVRepository
 from app.repositories.jobs import JobRepository
 from app.repositories.preferences import PreferenceRepository
-from app.repositories.sync_jobs import SyncJobRepository
+from app.repositories.sync_jobs import ScoringItemRepository, SyncJobRepository
 
 SCORING_KIND = "scoring"
 ANALYSIS_PENDING = "pending"
@@ -152,6 +152,10 @@ class ScoringService:
                 "cv_id": str(cv.id),
             },
             progress={"analyzed": 0, "failed": 0, "skipped": 0, "total": len(targets)},
+        )
+        # One claimable row per posting: the worker's idempotency boundary.
+        ScoringItemRepository(self.db).create_items(
+            job, [(target.id, cv.checksum) for target in targets]
         )
         self.db.flush()
         return job, len(targets)

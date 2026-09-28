@@ -130,13 +130,15 @@ class NotificationService:
         trigger: SyncTrigger = SyncTrigger.MANUAL,
         require_eligible: bool = True,
     ) -> SyncJob | None:
-        active = self.queue.active_for_user(user.id, kinds=(NOTIFY_KIND,))
-        if active is not None:
-            raise errors.conflict("Bu kullanıcı için bekleyen bir bildirim işi var.")
-
         targets = self.eligible_matches(user, match_ids=match_ids)
         if require_eligible and not targets:
             return None
+
+        active = self.queue.active_for_user(user.id, kinds=(NOTIFY_KIND,))
+        if active is not None:
+            # Same reasoning as the scan queue: never run two delivery jobs for
+            # one user, just report the one that is already queued.
+            return active
 
         job = self.queue.create(
             user_id=user.id,

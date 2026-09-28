@@ -52,12 +52,15 @@ class IntegrationService:
     :class:`~app.services.oauth_service.OAuthFlowService`."""
 
     def __init__(self, db: Session) -> None:
+        from app.services.telegram_service import TelegramConfigService
+
         self.db = db
         self.accounts = MailAccountRepository(db)
         self.telegram = TelegramRepository(db)
         self.clients = OAuthClientRepository(db)
         self.checkpoints = CheckpointRepository(db)
         self.client_service = OAuthClientService(db)
+        self.telegram_service = TelegramConfigService(db)
 
     # --- listing --------------------------------------------------------
     def list(self, user: User) -> list[IntegrationRead]:
@@ -106,21 +109,33 @@ class IntegrationService:
             )
 
         label, description, phase = PROVIDER_LABELS[Provider.TELEGRAM.value]
+        telegram_status = self.telegram_service.status(user)
         items.append(
             IntegrationRead(
                 provider=Provider.TELEGRAM.value,
                 label=label,
                 description=description,
                 category="notification",
-                status=telegram.status if telegram else ConnectionStatus.DISCONNECTED.value,
-                available=False,
-                unavailable_reason="Telegram bağlantısı henüz geliştirilmedi (3. aşama).",
+                status=telegram_status["status"],
+                available=True,
+                unavailable_reason=None,
                 phase=phase,
-                detail=telegram.username if telegram else description,
-                last_synced_at=telegram.linked_at if telegram else None,
+                detail=(
+                    f"@{telegram_status['bot_username']}"
+                    if telegram_status.get("bot_username")
+                    else description
+                ),
+                last_synced_at=telegram_status.get("last_notification_at")
+                or telegram_status.get("linked_at"),
                 capabilities={
-                    "implemented": False,
-                    "planned": "Kullanıcı bazlı bot token ve Chat ID 3. aşamada girilecek.",
+                    "implemented": True,
+                    "token_hint": telegram_status.get("token_hint"),
+                    "chat_id": telegram_status.get("chat_id"),
+                    "bot_username": telegram_status.get("bot_username"),
+                    "last_error": telegram_status.get("last_error"),
+                    "last_error_class": telegram_status.get("last_error_class"),
+                    "hint": telegram_status.get("hint"),
+                    "message": telegram_status.get("message"),
                 },
             )
         )
@@ -155,21 +170,22 @@ class IntegrationService:
         )
 
     def deepseek_summary(self) -> dict:
-        configured = bool(settings.deepseek_api_key)
-        return {
-            "provider": "deepseek",
-            "label": "DeepSeek",
-            "model": settings.deepseek_model,
-            "base_url": settings.deepseek_base_url,
-            "shared": True,
-            "enabled": False,
-            "configured": configured,
-            "phase": "phase-3",
-            "note": (
-                "DeepSeek skorlaması 3. aşamada açılacak. Anahtar backend/.env.local "
-                "içinde tutulur ve tüm kullanıcılar için ortaktır; panelden girilmez."
-            ),
-        }
+        """Shared LLM status: presence and model only, never the key value."""
+        from app.integrations.deepseek import DeepSeekScoringClient
+
+        summary = DeepSeekScoringClient().describe()
+        summary.update(
+            {
+                "label": "DeepSeek / OpenAI-uyumlu LLM",
+                "prompt_version": settings.llm_prompt_version,
+                "note": (
+                    "Skorlama ve CV profili için ortak LLM kullanılır. Anahtar "
+                    "backend/.env.local içinde tutulur; panelden girilmez ve "
+                    "hiçbir zaman tarayıcıya gönderilmez."
+                ),
+            }
+        )
+        return summary
 
     # --- account maintenance -------------------------------------------
     def require_account(self, user: User, account_id: uuid.UUID) -> MailAccount:
@@ -211,31 +227,12 @@ class IntegrationService:
         self.db.flush()
         return account
 
-    # --- telegram (phase 3 contract kept) -------------------------------
+    # --- telegram ------------------------------------------------------
     def telegram_status(self, user: User) -> dict:
-        integration = self.telegram.get_for_user(user.id)
-        return {
-            "provider": "telegram",
-            "status": integration.status if integration else ConnectionStatus.DISCONNECTED.value,
-            "chat_id": integration.chat_id if integration else None,
-            "username": integration.username if integration else None,
-            "available": False,
-            "phase": "phase-3",
-            "message": "Telegram bağlantısı 3. aşamada eklenecek.",
-        }
+        return self.telegram_service.status(user)
 
-    def link_telegram(self, user: User) -> None:
-        raise errors.not_implemented("phase-3", "Telegram bağlantısı 3. aşamada eklenecek.")
-
-    def unlink_telegram(self, user: User) -> None:
-        integration = self.telegram.get_for_user(user.id)
-        if integration is None:
-            raise errors.not_found("Telegram entegrasyonu bulunamadı.")
-        integration.chat_id = None
-        integration.bot_token_encrypted = None
-        integration.status = ConnectionStatus.DISCONNECTED.value
-        integration.linked_at = None
-        self.db.flush()
+    def unlink_telegram(self, user: User) -> dict:
+        return self.telegram_service.disconnect(user)
 
 
 def _aggregate_status(accounts: list[MailAccount]) -> str:

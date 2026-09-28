@@ -156,7 +156,11 @@ def test_overview_matches_own_data(api, seeded):
     assert providers["gmail"]["status"] == "disconnected"
     assert providers["gmail"]["available"] is True
     assert providers["gmail"]["account_count"] == 1
-    assert providers["telegram"]["available"] is False
+    # Phase 3: Telegram became a real per-user integration, so it is no longer
+    # reported as "unavailable". It starts disconnected until the user saves a
+    # verified bot token + chat id.
+    assert providers["telegram"]["available"] is True
+    assert providers["telegram"]["status"] == "disconnected"
 
 
 def test_sync_history_is_scoped_per_user(api, seeded):

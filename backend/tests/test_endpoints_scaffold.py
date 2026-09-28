@@ -5,15 +5,21 @@ from __future__ import annotations
 import pytest
 
 
-def test_telegram_link_is_not_implemented(api_user1):
-    response = api_user1.post("/api/v1/integrations/telegram/link")
-    assert response.status_code == 501
-    assert response.json()["detail"]["phase"] == "phase-3"
+def test_telegram_token_must_be_valid(api_user1):
+    """Phase 3 implements Telegram; an unverified token is refused, never faked."""
+    response = api_user1.post(
+        "/api/v1/integrations/telegram/config",
+        json={"bot_token": "gecersiz-token-format"},
+    )
+    assert response.status_code == 422
+    assert "token" in response.json()["detail"]["message"].lower()
 
 
-def test_notification_test_is_not_implemented(api_user1):
+def test_notification_test_requires_a_configured_bot(api_user1):
+    """No token/chat saved yet: the API explains the missing setup instead of 501."""
     response = api_user1.post("/api/v1/notifications/test")
-    assert response.status_code == 501
+    assert response.status_code == 422
+    assert "Telegram" in response.json()["detail"]["message"]
 
 
 def test_connect_requires_saved_client_credentials(api_user1):
@@ -38,9 +44,14 @@ def test_integrations_report_phase2_availability(api_user1, monkeypatch):
         assert item["oauth_client"]["redirect_uri"].endswith(f"/{provider}/callback")
         assert item["capabilities"]["first_scan_window_days"] >= 1
 
+    # Phase 3 replaced the phase-2 telegram stub with a real per-user
+    # integration, so it is now available and reports its own config state.
     telegram = providers["telegram"]
-    assert telegram["available"] is False
+    assert telegram["available"] is True
     assert telegram["phase"] == "phase-3"
+    assert telegram["status"] == "disconnected"
+    assert telegram["capabilities"]["implemented"] is True
+    assert telegram["capabilities"]["chat_id"] is None
 
     # The shared DeepSeek key is reported by presence only, never by value.
     assert body["deepseek"]["shared"] is True
@@ -55,8 +66,10 @@ def test_deepseek_summary_never_exposes_the_key(api_user1, monkeypatch):
     response = api_user1.get("/api/v1/integrations")
     body = response.json()
     assert body["deepseek"]["configured"] is True
-    serialized = response.text
-    assert "super-secret-key-value" not in serialized
+    assert body["deepseek"]["shared"] is True
+    # Only presence/model summary is exposed - never the key itself.
+    assert "api_key" not in body["deepseek"]
+    assert "super-secret-key-value" not in response.text
 
 
 def test_sync_status_reports_worker_hint(api_user1):

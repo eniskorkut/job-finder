@@ -47,10 +47,7 @@ class NotificationService:
             item = NotificationRead.model_validate(record)
             item.job_title = record.job.title if record.job else None
             item.company = record.job.company if record.job else None
+            if record.job_match is not None:
+                item.score = record.job_match.score
             items.append(item)
         return Page.build(items, total, page, page_size)
-
-    def send_test(self, user: User) -> None:
-        raise errors.not_implemented(
-            "phase-3", "Telegram bildirim gönderimi 3. aşamada eklenecek."
-        )

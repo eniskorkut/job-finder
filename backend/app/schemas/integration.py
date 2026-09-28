@@ -107,3 +107,31 @@ class IntegrationRead(ORMModel):
 class IntegrationsResponse(ORMModel):
     integrations: list[IntegrationRead]
     deepseek: dict
+
+
+class TelegramConfigRequest(BaseModel):
+    bot_token: str | None = Field(default=None, max_length=200)
+    chat_id: str | None = Field(default=None, max_length=64)
+
+
+class TelegramChatCandidate(BaseModel):
+    chat_id: str
+    type: str | None = None
+    title: str | None = None
+    username: str | None = None
+    last_message_at: int | None = None
+
+
+class TelegramDetectResponse(BaseModel):
+    bot_username: str | None = None
+    candidates: list[TelegramChatCandidate] = Field(default_factory=list)
+    suggested_chat_id: str | None = None
+    requires_manual_choice: bool = False
+    message: str
+
+
+class TelegramTestResponse(BaseModel):
+    ok: bool
+    message: str
+    status: str
+    message_id: int | None = None

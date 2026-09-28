@@ -20,10 +20,14 @@ from app.schemas.integration import (
     MailAccountUpdateRequest,
     OAuthClientRead,
     OAuthClientSaveRequest,
+    TelegramConfigRequest,
+    TelegramDetectResponse,
+    TelegramTestResponse,
 )
 from app.services.auth_service import AuthService
 from app.services.integration_service import IntegrationService
 from app.services.oauth_service import OAuthClientService, OAuthFlowService
+from app.services.telegram_service import TelegramConfigService
 
 logger = logging.getLogger("jobhunter.api.integrations")
 
@@ -250,19 +254,57 @@ def purge_account(
     return MessageResponse(message="Hesap kaydı kaldırıldı.", code="account_removed")
 
 
-# --- telegram (phase 3) -------------------------------------------------
+# --- telegram (per user, token encrypted) -------------------------------
 @router.get("/telegram/status")
 def telegram_status(user: CurrentUser, db: DbSession) -> dict:
     return IntegrationService(db).telegram_status(user)
 
 
-@router.post("/telegram/link", response_model=MessageResponse)
-def link_telegram(user: CurrentUser, db: DbSession) -> MessageResponse:
-    IntegrationService(db).link_telegram(user)
-
-
-@router.delete("/telegram", response_model=MessageResponse)
-def unlink_telegram(user: CurrentUser, db: DbSession) -> MessageResponse:
-    IntegrationService(db).unlink_telegram(user)
+@router.post("/telegram/config")
+async def configure_telegram(
+    payload: TelegramConfigRequest, user: CurrentUser, db: DbSession
+) -> dict:
+    """Validate (getMe/getChat) and store the bot token + chat id for this user."""
+    service = TelegramConfigService(db)
+    status = await service.save_config(
+        user, bot_token=payload.bot_token, chat_id=payload.chat_id
+    )
     db.commit()
-    return MessageResponse(message="Telegram bağlantısı kaldırıldı.", code="telegram_unlinked")
+    return status
+
+
+@router.post("/telegram/link", include_in_schema=False)
+async def link_telegram_compat(
+    payload: TelegramConfigRequest, user: CurrentUser, db: DbSession
+) -> dict:
+    """Backwards compatible alias of /telegram/config."""
+    return await configure_telegram(payload, user, db)
+
+
+@router.post("/telegram/detect-chat", response_model=TelegramDetectResponse)
+async def detect_telegram_chat(
+    user: CurrentUser, db: DbSession, payload: TelegramConfigRequest | None = None
+) -> TelegramDetectResponse:
+    """Find the chat id from recent /start messages (getUpdates)."""
+    service = TelegramConfigService(db)
+    result = await service.detect_chat(
+        user, bot_token=payload.bot_token if payload else None
+    )
+    db.commit()
+    return TelegramDetectResponse.model_validate(result)
+
+
+@router.post("/telegram/test", response_model=TelegramTestResponse)
+async def test_telegram(user: CurrentUser, db: DbSession) -> TelegramTestResponse:
+    service = TelegramConfigService(db)
+    outcome = await service.send_test(user)
+    db.commit()
+    return TelegramTestResponse.model_validate(outcome)
+
+
+@router.delete("/telegram")
+def unlink_telegram(user: CurrentUser, db: DbSession) -> dict:
+    service = TelegramConfigService(db)
+    status = service.disconnect(user)
+    db.commit()
+    return {**status, "message": "Telegram bağlantısı kaldırıldı."}

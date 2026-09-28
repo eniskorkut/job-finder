@@ -51,10 +51,13 @@ def run_sync(
 def list_jobs(
     user: CurrentUser,
     db: DbSession,
+    kind: str | None = Query(default=None, max_length=20),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> Page[SyncJobRead]:
-    items, total = SyncJobService(db).list_jobs(user, page=page, page_size=page_size)
+    items, total = SyncJobService(db).list_jobs(
+        user, page=page, page_size=page_size, kind=kind
+    )
     return Page.build(
         [SyncJobRead.model_validate(job) for job in items], total, page, page_size
     )
@@ -112,6 +115,7 @@ def _status_response(base, active, latest) -> SyncStatusResponse:
             "available": True,
             "running": active is not None,
             "active_job_id": active.id if active else None,
+            "active_job_kind": active.kind if active else None,
             "last_sync_at": last_activity or base.last_sync_at,
             "message": (
                 "Tarama sürüyor; ilerleme canlı güncelleniyor."

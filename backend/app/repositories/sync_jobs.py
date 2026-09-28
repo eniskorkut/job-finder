@@ -11,10 +11,12 @@ from app.models.enums import (
     ProcessedMessageStatus,
     SyncJobAccountStatus,
     SyncJobStatus,
+    SyncTrigger,
 )
 from app.models.sync_job import (
     JobSource,
     ProcessedMessage,
+    ScoringItem,
     SyncCheckpoint,
     SyncJob,
     SyncJobAccount,
@@ -42,14 +44,52 @@ class SyncJobRepository(Repository[SyncJob]):
         stmt = select(SyncJob).where(SyncJob.id == job_id, SyncJob.user_id == user_id)
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def active_for_user(self, user_id: uuid.UUID) -> SyncJob | None:
+    def active_for_user(
+        self, user_id: uuid.UUID, *, kinds: tuple[str, ...] | None = None
+    ) -> SyncJob | None:
+        stmt = select(SyncJob).where(
+            SyncJob.user_id == user_id, SyncJob.status.in_(ACTIVE_STATUSES)
+        )
+        if kinds:
+            stmt = stmt.where(SyncJob.kind.in_(kinds))
+        stmt = stmt.order_by(SyncJob.requested_at.desc()).limit(1)
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def create(
+        self,
+        *,
+        user_id: uuid.UUID,
+        kind: str = "mail_scan",
+        trigger: str = SyncTrigger.MANUAL.value,
+        payload: dict | None = None,
+        progress: dict | None = None,
+        accounts_total: int = 0,
+        account_ids: list[str] | None = None,
+    ) -> SyncJob:
+        job = SyncJob(
+            user_id=user_id,
+            kind=kind,
+            status=SyncJobStatus.QUEUED.value,
+            trigger=trigger,
+            payload=payload or {},
+            progress=progress or {},
+            accounts_total=accounts_total,
+            account_ids=account_ids or [],
+        )
+        self.db.add(job)
+        self.db.flush()
+        return job
+
+    def list_for_user_by_kind(
+        self, user_id: uuid.UUID, kind: str, *, limit: int = 20
+    ) -> list[SyncJob]:
         stmt = (
             select(SyncJob)
-            .where(SyncJob.user_id == user_id, SyncJob.status.in_(ACTIVE_STATUSES))
+            .where(SyncJob.user_id == user_id, SyncJob.kind == kind)
             .order_by(SyncJob.requested_at.desc())
-            .limit(1)
+            .limit(limit)
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        return list(self.db.execute(stmt).scalars())
 
     def list_for_user(
         self, user_id: uuid.UUID, *, offset: int = 0, limit: int = 20
@@ -68,6 +108,30 @@ class SyncJobRepository(Repository[SyncJob]):
             ).scalar_one()
         )
         return items, total
+
+    def latest_for_user_kind(self, user_id: uuid.UUID, kind: str) -> SyncJob | None:
+        stmt = (
+            select(SyncJob)
+            .where(SyncJob.user_id == user_id, SyncJob.kind == kind)
+            .order_by(SyncJob.requested_at.desc())
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def last_by_kind_and_trigger(
+        self, user_id: uuid.UUID, *, kind: str, trigger: str
+    ) -> SyncJob | None:
+        stmt = (
+            select(SyncJob)
+            .where(
+                SyncJob.user_id == user_id,
+                SyncJob.kind == kind,
+                SyncJob.trigger == trigger,
+            )
+            .order_by(SyncJob.requested_at.desc())
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
 
     def latest_for_user(self, user_id: uuid.UUID) -> SyncJob | None:
         stmt = (
@@ -167,6 +231,15 @@ class SyncJobRepository(Repository[SyncJob]):
                 )
                 .values(status=SyncJobAccountStatus.QUEUED.value)
             )
+            # A crashed scoring job must not leave items stuck in ``running``.
+            self.db.execute(
+                update(ScoringItem)
+                .where(
+                    ScoringItem.sync_job_id == job.id,
+                    ScoringItem.status == "running",
+                )
+                .values(status="queued")
+            )
         if stale:
             self.db.flush()
         return stale
@@ -180,6 +253,23 @@ class SyncJobRepository(Repository[SyncJob]):
             ).scalar_one()
             > 0
         )
+
+    def update_progress(self, job_id: uuid.UUID, deltas: dict[str, int]) -> None:
+        """Atomic counters for the JSON progress document (short transaction)."""
+        from sqlalchemy import update as sa_update
+
+        if not deltas:
+            return
+        job = self.db.get(SyncJob, job_id)
+        if job is None:
+            return
+        progress = dict(job.progress or {})
+        for key, value in deltas.items():
+            progress[key] = int(progress.get(key, 0)) + int(value)
+        self.db.execute(
+            sa_update(SyncJob).where(SyncJob.id == job_id).values(progress=progress)
+        )
+        self.db.flush()
 
 
 class SyncJobAccountRepository(Repository[SyncJobAccount]):
@@ -244,6 +334,98 @@ class SyncJobAccountRepository(Repository[SyncJobAccount]):
         item.error_class = error_class.value if isinstance(error_class, ErrorClass) else str(error_class)
         item.finished_at = _now()
         self.db.flush()
+
+
+class ScoringItemRepository(Repository[ScoringItem]):
+    model = ScoringItem
+
+    def list_for_job(self, job_id: uuid.UUID) -> list[ScoringItem]:
+        stmt = (
+            select(ScoringItem)
+            .where(ScoringItem.sync_job_id == job_id)
+            .order_by(ScoringItem.id)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def create_items(
+        self, job: SyncJob, entries: list[tuple[uuid.UUID, str | None]]
+    ) -> list[ScoringItem]:
+        existing = {item.job_id for item in self.list_for_job(job.id)}
+        for job_id, cv_checksum in entries:
+            if job_id in existing:
+                continue
+            self.db.add(
+                ScoringItem(
+                    sync_job_id=job.id,
+                    user_id=job.user_id,
+                    job_id=job_id,
+                    cv_checksum=cv_checksum,
+                    status="queued",
+                )
+            )
+        self.db.flush()
+        return self.list_for_job(job.id)
+
+    def claim(self, item: ScoringItem) -> bool:
+        """queued -> running, atomically; False when somebody else took it."""
+        result = self.db.execute(
+            update(ScoringItem)
+            .where(
+                ScoringItem.id == item.id,
+                ScoringItem.status.in_(["queued", "retryable"]),
+            )
+            .values(
+                status="running",
+                attempt=ScoringItem.attempt + 1,
+                started_at=func.now(),
+            )
+        )
+        self.db.flush()
+        if result.rowcount:
+            self.db.refresh(item)
+            return True
+        return False
+
+    def mark_finished(
+        self,
+        item: ScoringItem,
+        *,
+        status: str,
+        match_id: uuid.UUID | None = None,
+        error_class: ErrorClass | str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        item.status = status
+        item.match_id = match_id or item.match_id
+        item.error_class = (
+            error_class.value if isinstance(error_class, ErrorClass) else error_class
+        )
+        item.error_message = (error_message or None) and error_message[:400]
+        item.finished_at = _now()
+        self.db.flush()
+
+    def pending_for_job(self, job_id: uuid.UUID) -> list[ScoringItem]:
+        stmt = (
+            select(ScoringItem)
+            .where(
+                ScoringItem.sync_job_id == job_id,
+                ScoringItem.status.in_(["queued", "retryable"]),
+            )
+            .order_by(ScoringItem.id)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def requeue_running(self, job_id: uuid.UUID) -> int:
+        result = self.db.execute(
+            update(ScoringItem)
+            .where(
+                ScoringItem.sync_job_id == job_id,
+                ScoringItem.status == "running",
+            )
+            .values(status="queued")
+        )
+        self.db.flush()
+        return int(result.rowcount or 0)
 
 
 class CheckpointRepository(Repository[SyncCheckpoint]):

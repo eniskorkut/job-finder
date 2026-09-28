@@ -8,6 +8,7 @@ import socket
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import errors
@@ -19,6 +20,8 @@ from app.models.enums import (
     SyncJobStatus,
     SyncTrigger,
 )
+from app.models.user import User
+from app.models.job import Job
 from app.models.sync_job import SyncJob, SyncJobAccount
 from app.models.user import User
 from app.repositories.jobs import MailAccountRepository
@@ -96,8 +99,36 @@ class SyncJobService:
         accounts_by_id = {
             account.id: account for account in self.accounts.list_for_user(user.id)
         }
+        items: list[dict] = []
+        if (job.kind or "mail_scan") == "scoring":
+            from app.repositories.sync_jobs import ScoringItemRepository
+
+            job_lookup = {
+                candidate.id: candidate
+                for candidate in self.db.execute(
+                    select(Job).where(Job.user_id == user.id)
+                ).scalars()
+            }
+            for item in ScoringItemRepository(self.db).list_for_job(job.id):
+                candidate = job_lookup.get(item.job_id)
+                items.append(
+                    {
+                        "id": item.id,
+                        "job_id": item.job_id,
+                        "job_title": candidate.title if candidate else None,
+                        "company": candidate.company if candidate else None,
+                        "status": item.status,
+                        "attempt": item.attempt,
+                        "error_class": item.error_class,
+                        "error_message": item.error_message,
+                        "match_id": item.match_id,
+                        "started_at": item.started_at,
+                        "finished_at": item.finished_at,
+                    }
+                )
         return {
             "job": job,
+            "items": items,
             "accounts": [
                 {
                     "id": row.id,
@@ -141,7 +172,12 @@ class SyncJobService:
         self.jobs.request_cancel(job)
         return job
 
-    def list_jobs(self, user: User, *, page: int = 1, page_size: int = 20):
+    def list_jobs(
+        self, user: User, *, page: int = 1, page_size: int = 20, kind: str | None = None
+    ):
+        if kind:
+            items = self.jobs.list_for_user_by_kind(user.id, kind, limit=page_size)
+            return items, len(items)
         return self.jobs.list_for_user(
             user.id, offset=(page - 1) * page_size, limit=page_size
         )
@@ -159,11 +195,15 @@ class SyncRunner:
         worker_id: str | None = None,
         session_factory=SessionLocal,
         client_factory: ClientFactory | None = None,
+        llm_factory=None,
+        telegram_factory=None,
         now: datetime | None = None,
     ) -> None:
         self.worker_id = worker_id or default_worker_id()
         self.session_factory = session_factory
         self.client_factory = client_factory or ClientFactory()
+        self.llm_factory = llm_factory
+        self.telegram_factory = telegram_factory
         self._now = now
 
     # --- queue handling -------------------------------------------------
@@ -189,6 +229,43 @@ class SyncRunner:
 
     # --- execution ------------------------------------------------------
     async def execute(self, job_id: uuid.UUID) -> SyncJobStatus:
+        """Dispatch one durable job to its stage: mail scan, scoring, notify."""
+        with self.session_factory() as session:
+            job = session.get(SyncJob, job_id)
+            kind = (job.kind if job else None) or "mail_scan"
+        if kind == "scoring":
+            return await self._execute_scoring(job_id)
+        if kind == "notify":
+            return await self._execute_notify(job_id)
+        return await self._execute_mail_scan(job_id)
+
+    async def _execute_scoring(self, job_id: uuid.UUID) -> SyncJobStatus:
+        from app.services.scoring_runner import ScoringRunner
+
+        runner = ScoringRunner(
+            llm_factory=self.llm_factory,
+            session_factory=self.session_factory,
+            now=self._now,
+            cancel_check=lambda: self._is_cancelled(job_id),
+        )
+        outcome = await runner.run(job_id)
+        self._finish_job(job_id, outcome.status, error=outcome.error_message)
+        return outcome.status
+
+    async def _execute_notify(self, job_id: uuid.UUID) -> SyncJobStatus:
+        from app.services.notification_service import NotificationRunner
+
+        runner = NotificationRunner(
+            client_factory=self.telegram_factory,
+            session_factory=self.session_factory,
+            now=self._now,
+            cancel_check=lambda: self._is_cancelled(job_id),
+        )
+        outcome = await runner.run(job_id)
+        self._finish_job(job_id, outcome.status, error=outcome.error_message)
+        return outcome.status
+
+    async def _execute_mail_scan(self, job_id: uuid.UUID) -> SyncJobStatus:
         with self.session_factory() as session:
             job = session.get(SyncJob, job_id)
             if job is None:
@@ -349,19 +426,88 @@ class SyncRunner:
             return SyncJobStatus.PARTIAL_FAILED
         return SyncJobStatus.FAILED
 
-    def _finish_job(self, job_id: uuid.UUID, status: SyncJobStatus) -> None:
+    def _finish_job(
+        self, job_id: uuid.UUID, status: SyncJobStatus, error: str | None = None
+    ) -> None:
+        kind = "mail_scan"
+        trigger = None
+        user_id = None
+        finished_at = None
         with self.session_factory() as session:
             job = session.get(SyncJob, job_id)
             if job is None:
                 return
+            kind = job.kind or "mail_scan"
+            trigger = job.trigger
+            user_id = job.user_id
             repo = SyncJobRepository(session)
             if job.cancel_requested and status == SyncJobStatus.COMPLETED:
                 status = SyncJobStatus.CANCELLED
-            error = job.error_message
+            error = error or job.error_message
             if status in {SyncJobStatus.FAILED, SyncJobStatus.PARTIAL_FAILED} and not error:
-                error = "Bir veya daha fazla posta kutusu taranamadı. Ayrıntı için hesaplara bakın."
+                error = "İş tamamlanamadı; ayrıntı için ilgili ekrana bakın."
             repo.finish(job, status, error=error)
+            finished_at = job.finished_at
             session.commit()
+
+        if user_id is not None:
+            self._continue_pipeline(
+                kind=kind,
+                trigger=trigger,
+                user_id=user_id,
+                status=status,
+                finished_at=finished_at,
+            )
+
+    def _continue_pipeline(
+        self,
+        *,
+        kind: str,
+        trigger: str | None,
+        user_id: uuid.UUID,
+        status: SyncJobStatus,
+        finished_at: datetime | None,
+    ) -> None:
+        """Hand the pipeline to the next stage. Failures here never fail a job."""
+        try:
+            if kind == "mail_scan":
+                if trigger == SyncTrigger.SCHEDULED.value:
+                    from app.services.scheduler_service import SchedulerService
+
+                    SchedulerService(session_factory=self.session_factory, now=self._now).refresh_after_scan(
+                        user_id,
+                        finished_at=finished_at or datetime.now(timezone.utc),
+                        successful=status == SyncJobStatus.COMPLETED,
+                    )
+                if status in {SyncJobStatus.COMPLETED, SyncJobStatus.PARTIAL_FAILED}:
+                    from app.services.scoring_service import ScoringService
+
+                    with self.session_factory() as session:
+                        job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                        session.commit()
+                    if job is not None:
+                        logger.info(
+                            "Skorlama kuyruğa alındı (user=%s, job=%s)", user_id, job.id
+                        )
+            elif kind == "scoring":
+                if status in {SyncJobStatus.COMPLETED, SyncJobStatus.PARTIAL_FAILED}:
+                    from app.services.notification_service import NotificationService
+
+                    with self.session_factory() as session:
+                        user = session.get(User, user_id)
+                        job = NotificationService(session).enqueue(user) if user else None
+                        session.commit()
+                    if job is not None:
+                        logger.info(
+                            "Bildirim kuyruğa alındı (user=%s, job=%s)", user_id, job.id
+                        )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Pipeline devamı kurulamadı (kind=%s, user=%s): %s",
+                kind,
+                user_id,
+                type(exc).__name__,
+            )
 
     def _release_job(self, job_id: uuid.UUID) -> None:
         with self.session_factory() as session:
@@ -377,19 +523,44 @@ class SyncRunner:
     async def run_forever(self, *, once: bool = False, poll_seconds: float | None = None) -> int:
         processed = 0
         self.recover()
+        last_scheduler_tick: datetime | None = None
         while True:
             job_id = await asyncio.to_thread(self.claim)
             if job_id is None:
                 if once:
                     return processed
+                last_scheduler_tick = await self._scheduler_tick(last_scheduler_tick)
                 await asyncio.sleep(poll_seconds or settings.worker_poll_seconds)
                 continue
-            logger.info("Tarama işi alındı: %s", job_id)
+            logger.info("İş alındı: %s", job_id)
             status = await self.execute(job_id)
-            logger.info("Tarama işi bitti: %s -> %s", job_id, status)
+            logger.info("İş bitti: %s -> %s", job_id, status)
             processed += 1
             if once:
                 return processed
+
+    async def _scheduler_tick(self, last_tick: datetime | None) -> datetime | None:
+        """Enqueue due scheduled scans at most once per scheduler interval."""
+        if not settings.scheduler_enabled:
+            return last_tick
+        now = self._now or datetime.now(timezone.utc)
+        if last_tick is not None and (now - last_tick).total_seconds() < settings.scheduler_poll_seconds:
+            return last_tick
+        from app.services.scheduler_service import SchedulerService
+
+        try:
+            created = await asyncio.to_thread(
+                SchedulerService(session_factory=self.session_factory, now=self._origin_now()).sync_due
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Zamanlayıcı turu başarısız: %s", type(exc).__name__)
+            return now
+        if created:
+            logger.info("Zamanlayıcı %s tarama işi oluşturdu.", len(created))
+        return now
+
+    def _origin_now(self) -> datetime | None:
+        return self._now
 
 
 def utcnow() -> datetime:

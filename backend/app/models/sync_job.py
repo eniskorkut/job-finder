@@ -48,11 +48,19 @@ class SyncJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
 
+    # mail_scan | scoring | notify - one durable queue for the whole pipeline
+    kind: Mapped[str] = mapped_column(
+        String(20), default="mail_scan", server_default="mail_scan", index=True
+    )
     status: Mapped[str] = mapped_column(
         String(20), default=SyncJobStatus.QUEUED.value, index=True
     )
     trigger: Mapped[str] = mapped_column(String(20), default=SyncTrigger.MANUAL.value)
     account_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # kind specific input (e.g. scoring mode / target job ids)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    # kind specific counters so the UI can show per-stage progress
+    progress: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
 
     accounts_total: Mapped[int] = mapped_column(Integer, default=0)
     accounts_processed: Mapped[int] = mapped_column(Integer, default=0)
@@ -131,6 +139,51 @@ class SyncJobAccount(UUIDPrimaryKeyMixin, Base):
 
     job: Mapped[SyncJob] = relationship(back_populates="accounts")
     mail_account: Mapped["MailAccount"] = relationship()  # noqa: F821
+
+
+class ScoringItem(UUIDPrimaryKeyMixin, Base):
+    """One (job, cv version) analysis unit inside a scoring job.
+
+    The row is the idempotency boundary: claiming flips it to ``running`` so the
+    same job is never analysed twice concurrently, and a crashed worker leaves
+    it claimable again after lease recovery.
+    """
+
+    __tablename__ = "scoring_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "sync_job_id", "job_id", name="uq_scoring_items_job_entry"
+        ),
+        Index("ix_scoring_items_user_status", "user_id", "status"),
+    )
+
+    sync_job_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("sync_jobs.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+    match_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("job_matches.id", ondelete="SET NULL")
+    )
+
+    cv_checksum: Mapped[str | None] = mapped_column(String(64), default=None)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    error_class: Mapped[str | None] = mapped_column(String(20), default=None)
+    error_message: Mapped[str | None] = mapped_column(String(400), default=None)
+
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
+    job: Mapped["Job"] = relationship()  # noqa: F821
 
 
 class SyncCheckpoint(UUIDPrimaryKeyMixin, TimestampMixin, Base):

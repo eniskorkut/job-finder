@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from email.message import Message
 from enum import StrEnum
+from typing import Any
 
 from app.models.enums import CursorKind
 
@@ -65,15 +66,6 @@ class JobPostingCandidate:
     # DescriptionStatus.INSUFFICIENT - the UI badges those instead of the
     # parser inventing content that was not in the e-mail.
     description_status: str = "ok"
-
-
-@dataclass(slots=True)
-class MatchScore:
-    score: int
-    rationale: str
-    matched_skills: list[str] = field(default_factory=list)
-    missing_skills: list[str] = field(default_factory=list)
-    model: str | None = None
 
 
 @dataclass(slots=True)
@@ -192,37 +184,47 @@ class MailProviderClient(ABC):
 
 
 class JobScoringClient(ABC):
-    """Shared LLM scoring client (DeepSeek). Not user specific."""
+    """Shared LLM client contract (implemented by the OpenAI-compatible client).
+
+    Not user specific: the caller has already scoped the data to one owner.
+    """
 
     provider: str
-    phase: str
+
+    @property
+    @abstractmethod
+    def configured(self) -> bool:
+        """True when key, base URL and model are all present."""
 
     @abstractmethod
-    def score_job(
-        self, *, cv_text: str, job_title: str, job_description: str, preferences: dict
-    ) -> MatchScore:
-        """Return a 0-100 match score with rationale."""
+    async def extract_cv_profile(self, *, cv_text: str) -> tuple[Any, Any]:
+        """Structured profile extracted from one CV."""
 
     @abstractmethod
-    def extract_profile(self, *, cv_text: str) -> dict:
-        """Extract structured profile data from a CV."""
+    async def score_job(self, **kwargs: Any) -> tuple[Any, Any]:
+        """Requirement fit between one CV and one job posting."""
+
+    @abstractmethod
+    def describe(self) -> dict:
+        """Safe (secret free) summary for the API/UI."""
 
 
 class NotificationClient(ABC):
+    """Per-user notification transport contract (Telegram today)."""
+
     provider: str
-    phase: str
 
     @abstractmethod
-    def send_message(self, *, destination: str, text: str) -> dict:
+    async def send_message(self, *, chat_id: str, text: str) -> dict:
         """Send a single notification message."""
 
     @abstractmethod
-    def verify_destination(self, *, destination: str) -> bool:
-        """Check that the destination (chat id) is reachable."""
+    async def get_chat(self, *, chat_id: str) -> dict:
+        """Resolve a chat to confirm the destination exists."""
 
-
-class DeepSeekClient(JobScoringClient):
-    """Alias kept for readability at call sites."""
+    @abstractmethod
+    def describe(self) -> dict:
+        """Safe (token free) summary for the API/UI."""
 
 
 def parse_headers(message: Message) -> dict[str, str]:

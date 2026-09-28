@@ -44,3 +44,20 @@ class OverviewResponse(ORMModel):
     connected_accounts: int = 0
     active_job_id: uuid.UUID | None = None
     worker_hint: str | None = None
+
+    # phase 3: real data metrics, kept apart from the mock fixture numbers
+    real_jobs: int = 0
+    discovered_today: int = 0
+    analyzed_jobs: int = 0
+    pending_analysis: int = 0
+    failed_analysis: int = 0
+    notified_jobs: int = 0
+    average_score: float | None = None
+    last_manual_scan_at: datetime | None = None
+    last_auto_scan_at: datetime | None = None
+    next_auto_scan_at: datetime | None = None
+    auto_scan_enabled: bool = False
+    scan_interval_hours: int = 24
+    llm: dict = Field(default_factory=dict)
+    notifications: dict = Field(default_factory=dict)
+    active_job_kind: str | None = None

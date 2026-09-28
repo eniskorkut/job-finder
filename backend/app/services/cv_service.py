@@ -122,6 +122,11 @@ class CVService:
         self.db.add(cv)
         self.db.flush()
         self.cvs.deactivate_all(user.id, keep=cv.id)
+        # A new active CV invalidates the cached profile so the next analysis
+        # uses the new document (existing scores are kept as history).
+        from app.services.profile_service import CVProfileService
+
+        CVProfileService(self.db).invalidate(user.id, reason="new_cv_uploaded")
         return cv
 
     def update(
@@ -132,6 +137,9 @@ class CVService:
             cv.is_active = is_active
             if is_active:
                 self.cvs.deactivate_all(user.id, keep=cv.id)
+                from app.services.profile_service import CVProfileService
+
+                CVProfileService(self.db).invalidate(user.id, reason="active_cv_changed")
         if summary is not None:
             cv.summary = summary
         self.db.flush()

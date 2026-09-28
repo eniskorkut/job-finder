@@ -8,8 +8,8 @@ phase lands.
 """
 
 from app.integrations.base import (
-    DeepSeekClient,
     IntegrationNotImplemented,
+    JobScoringClient,
     MailProviderClient,
     NotificationClient,
     ProviderCapabilities,
@@ -20,10 +20,10 @@ from app.integrations.outlook import OutlookClient
 from app.integrations.telegram import TelegramClient
 
 __all__ = [
-    "DeepSeekClient",
     "DeepSeekScoringClient",
     "GmailClient",
     "IntegrationNotImplemented",
+    "JobScoringClient",
     "MailProviderClient",
     "NotificationClient",
     "OutlookClient",

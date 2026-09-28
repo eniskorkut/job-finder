@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.logging import install_secret_filter
 from app.db.session import engine
 
 logger = logging.getLogger("jobhunter")
@@ -17,6 +18,7 @@ logger = logging.getLogger("jobhunter")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    install_secret_filter()
     settings.data_path.mkdir(parents=True, exist_ok=True)
     settings.cv_storage_path.mkdir(parents=True, exist_ok=True)
     logger.info("Job Hunter API started (env=%s)", settings.environment)

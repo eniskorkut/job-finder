@@ -81,6 +81,7 @@ class SyncJobAccountStatus(StrEnum):
 
 class SyncTrigger(StrEnum):
     MANUAL = "manual"
+    SCHEDULED = "scheduled"
     RETRY = "retry"
     WORKER_RECOVERY = "worker_recovery"
 

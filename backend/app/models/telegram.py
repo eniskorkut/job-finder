@@ -30,5 +30,12 @@ class TelegramIntegration(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), default=None
     )
     last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    last_error_class: Mapped[str | None] = mapped_column(String(20), default=None)
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    last_notification_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     user: Mapped["User"] = relationship()  # noqa: F821

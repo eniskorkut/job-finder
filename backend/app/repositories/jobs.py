@@ -13,6 +13,7 @@ SORT_OPTIONS = {
     "recent": (Job.discovered_at.desc(), Job.id.desc()),
     "oldest": (Job.discovered_at.asc(), Job.id.asc()),
     "score": (JobMatch.score.desc().nulls_last(), Job.discovered_at.desc()),
+    "confidence": (JobMatch.confidence.desc().nulls_last(), Job.discovered_at.desc()),
     "score_asc": (JobMatch.score.asc().nulls_last(), Job.discovered_at.desc()),
     "company": (Job.company.asc(), Job.discovered_at.desc()),
     "title": (Job.title.asc(), Job.discovered_at.desc()),
@@ -37,6 +38,8 @@ class JobRepository(Repository[Job]):
         status: str | None = None,
         min_score: int | None = None,
         max_score: int | None = None,
+        analysis_status: str | None = None,
+        notification: str | None = None,
         sort: str = "recent",
         offset: int = 0,
         limit: int = 20,
@@ -148,6 +151,46 @@ class JobRepository(Repository[Job]):
                 JobMatch.user_id == user_id, JobMatch.score.is_not(None)
             )
         ).scalar_one()
+        average_confidence = self.db.execute(
+            select(func.avg(JobMatch.confidence)).where(
+                JobMatch.user_id == user_id, JobMatch.confidence.is_not(None)
+            )
+        ).scalar_one()
+        real_jobs = int(
+            self.db.execute(
+                select(func.count(Job.id)).where(
+                    Job.user_id == user_id, Job.is_mock.is_(False)
+                )
+            ).scalar_one()
+        )
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        discovered_today = int(
+            self.db.execute(
+                select(func.count(Job.id)).where(
+                    Job.user_id == user_id,
+                    Job.is_mock.is_(False),
+                    Job.discovered_at >= today_start,
+                )
+            ).scalar_one()
+        )
+        analysis_rows = self.db.execute(
+            select(JobMatch.analysis_status, func.count(JobMatch.id))
+            .join(Job, Job.id == JobMatch.job_id)
+            .where(JobMatch.user_id == user_id, Job.is_mock.is_(False))
+            .group_by(JobMatch.analysis_status)
+        ).all()
+        analysis_counts = {status or "pending": int(count) for status, count in analysis_rows}
+        analyzed_jobs = analysis_counts.get("completed", 0)
+        failed_analysis = analysis_counts.get("failed", 0)
+        notified_jobs = int(
+            self.db.execute(
+                select(func.count(JobMatch.id))
+                .join(Job, Job.id == JobMatch.job_id)
+                .where(JobMatch.user_id == user_id, JobMatch.notified_at.is_not(None))
+            ).scalar_one()
+        )
 
         source_rows = self.db.execute(
             select(Job.source, func.count(Job.id))
@@ -173,6 +216,17 @@ class JobRepository(Repository[Job]):
             "average_score": round(float(average_score), 1) if average_score is not None else None,
             "jobs_by_source": {row[0]: int(row[1]) for row in source_rows},
             "top_companies": [{"company": row[0], "count": int(row[1])} for row in company_rows],
+            "real_jobs": real_jobs,
+            "discovered_today": discovered_today,
+            "analyzed_jobs": analyzed_jobs,
+            "pending_analysis": max(0, real_jobs - analyzed_jobs - failed_analysis),
+            "failed_analysis": failed_analysis,
+            "notified_jobs": notified_jobs,
+            "average_confidence": (
+                round(float(average_confidence), 1)
+                if average_confidence is not None
+                else None
+            ),
         }
 
     def filter_options(self, user_id: uuid.UUID) -> dict:
@@ -191,11 +245,18 @@ class JobRepository(Repository[Job]):
         work_modes = self.db.execute(
             select(Job.work_mode).where(Job.user_id == user_id).group_by(Job.work_mode)
         ).scalars()
+        analysis_statuses = self.db.execute(
+            select(JobMatch.analysis_status)
+            .join(Job, Job.id == JobMatch.job_id)
+            .where(JobMatch.user_id == user_id)
+            .group_by(JobMatch.analysis_status)
+        ).scalars()
         return {
             "sources": list(sources),
             "locations": list(locations),
             "companies": list(companies),
             "work_modes": list(work_modes),
+            "analysis_statuses": [status for status in analysis_statuses if status],
         }
 
     def latest_discovered_at(self, user_id: uuid.UUID) -> datetime | None:

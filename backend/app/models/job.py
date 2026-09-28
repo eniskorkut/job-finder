@@ -109,6 +109,37 @@ class JobMatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     missing_skills: Mapped[list[str]] = mapped_column(JSON, default=list)
     model: Mapped[str | None] = mapped_column(String(80), default=None)
 
+    # Phase 3 analysis detail. ``score`` is a CV <-> job requirement fit, never
+    # a hiring probability; the UI states that explicitly.
+    confidence: Mapped[int | None] = mapped_column(Integer, default=None)
+    experience_match: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown"
+    )
+    location_match: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown"
+    )
+    work_mode_match: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown"
+    )
+    title_match: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown"
+    )
+    match_details: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    insufficient_information: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+
+    analysis_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending", index=True
+    )
+    analysis_error: Mapped[str | None] = mapped_column(Text, default=None)
+    analysis_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    analyzed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    cv_checksum: Mapped[str | None] = mapped_column(String(64), default=None)
+    prompt_version: Mapped[str | None] = mapped_column(String(40), default=None)
+
     status: Mapped[str] = mapped_column(String(20), default=MatchStatus.NEW.value)
     is_mock: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_at: Mapped[datetime | None] = mapped_column(

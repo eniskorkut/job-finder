@@ -7,9 +7,10 @@ Run it next to the API (a second terminal):
     python -m app.worker --poll-seconds 1
 
 The API only enqueues jobs and answers 202; this process owns provider calls,
-concurrency limits, heartbeats and lease recovery. Restarting it is safe: a
-job whose lease expired is requeued and its mailboxes are idempotent because
-every processed message is recorded in ``processed_messages``.
+concurrency limits, heartbeats and lease recovery, and it also runs the
+per-user scheduler (no fourth process). Restarting it is safe: a job whose
+lease expired is requeued, its mailboxes are idempotent (``processed_messages``)
+and its scoring items are claimed atomically.
 """
 
 from __future__ import annotations
@@ -22,7 +23,10 @@ import sys
 from sqlalchemy import inspect, text
 
 from app.core.config import settings
+from app.core.logging import install_secret_filter
 from app.db.session import engine
+from app.integrations.deepseek import DeepSeekScoringClient
+from app.integrations.telegram import TelegramClient
 from app.services.sync_job_service import SyncRunner, default_worker_id
 
 logger = logging.getLogger("jobhunter.worker")
@@ -30,9 +34,13 @@ logger = logging.getLogger("jobhunter.worker")
 
 def _check_schema() -> bool:
     tables = set(inspect(engine).get_table_names())
-    if "sync_jobs" not in tables:
+    required = {"sync_jobs", "scoring_items", "cv_profiles", "telegram_integrations"}
+    missing = required - tables
+    if missing:
         print(
-            "Veritabanı şeması güncel değil. Önce 'alembic upgrade head' çalıştırın.",
+            "Veritabanı şeması güncel değil (eksik: "
+            + ", ".join(sorted(missing))
+            + "). Önce 'alembic upgrade head' çalıştırın.",
             file=sys.stderr,
         )
         return False
@@ -53,18 +61,29 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
     )
+    install_secret_filter()
     if not _check_schema():
         return 1
 
     with engine.connect() as connection:
         journal = connection.execute(text("PRAGMA journal_mode")).scalar_one_or_none()
-    runner = SyncRunner()
+    llm = DeepSeekScoringClient()
+    runner = SyncRunner(
+        llm_factory=DeepSeekScoringClient,
+        telegram_factory=TelegramClient,
+    )
     logger.info(
-        "Tarama işçisi hazır (worker=%s, sqlite_journal=%s, max_mailbox=%s, per_mailbox=%s)",
+        "İşçi hazır (worker=%s, sqlite_journal=%s, max_mailbox=%s, per_mailbox=%s, "
+        "llm=%s, llm_configured=%s, concurrency=%s, scheduler=%s/%ss)",
         default_worker_id(),
         journal,
         settings.sync_max_active_mailboxes,
         settings.sync_mailbox_concurrency,
+        llm.model or "-",
+        llm.configured,
+        llm.describe()["max_concurrency"],
+        settings.scheduler_enabled,
+        settings.scheduler_poll_seconds,
     )
 
     try:

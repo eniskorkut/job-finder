@@ -16,7 +16,9 @@ if not config.get_main_option("sqlalchemy.url"):
 database_url = config.get_main_option("sqlalchemy.url")
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Do not disable loggers that already exist in this process (httpx, the
+    # application loggers): the migration only configures its own.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

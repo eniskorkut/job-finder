@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, Uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -30,5 +32,16 @@ class UserPreference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     politeness_delay_seconds: Mapped[int] = mapped_column(Integer, default=30)
 
     notify_telegram: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Scheduler state (DB backed so a worker restart never loses the plan).
+    next_scan_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None, index=True
+    )
+    last_auto_scan_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    auto_scan_failures: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
 
     user: Mapped["User"] = relationship(back_populates="preferences")  # noqa: F821

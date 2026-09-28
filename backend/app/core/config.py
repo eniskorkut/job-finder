@@ -93,6 +93,36 @@ class Settings(BaseSettings):
         "login.microsoftonline.com,login.live.com,graph.microsoft.com"
     )
 
+    # --- Phase 3: shared LLM (OpenAI-compatible, deployment wide) ---------
+    # The endpoint may be an official DeepSeek API or any OpenAI-compatible
+    # gateway; key/base/model always come from configuration.
+    llm_max_concurrency: int = 3
+    llm_timeout_seconds: float = 60.0
+    llm_retry_max_attempts: int = 3
+    llm_json_mode: bool = True
+    llm_max_tokens: int = 1200
+    llm_temperature: float = 0.1
+    llm_prompt_version: str = "phase3-v1"
+    # Bounded context: the CV profile is always sent, this caps the raw excerpt.
+    llm_cv_context_chars: int = 3000
+    llm_job_description_chars: int = 6000
+    # Attempts per (user, job, cv version) before a match is parked as failed.
+    llm_max_analysis_attempts: int = 3
+
+    # --- Phase 3: Telegram (per user, token stored encrypted) -------------
+    telegram_api_base: str = "https://api.telegram.org"
+    telegram_timeout_seconds: float = 20.0
+    telegram_max_message_chars: int = 3500
+    telegram_retry_max_attempts: int = 3
+    telegram_max_notification_attempts: int = 3
+
+    # --- Phase 3: scheduler (runs inside the worker process) --------------
+    scheduler_enabled: bool = True
+    scheduler_poll_seconds: int = 60
+    scheduler_min_interval_hours: int = 1
+    scheduler_max_interval_hours: int = 168
+    scheduler_jitter_seconds: int = 30
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
@@ -140,6 +170,10 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def llm_configured(self) -> bool:
+        return bool(self.deepseek_api_key and self.deepseek_model and self.deepseek_base_url)
 
 
 def _split_hosts(value: str) -> list[str]:

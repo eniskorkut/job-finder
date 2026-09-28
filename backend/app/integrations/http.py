@@ -25,7 +25,7 @@ from app.models.enums import ErrorClass
 
 logger = logging.getLogger("jobhunter.integrations.http")
 
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 
 def assert_allowed_host(url: str, allowed_hosts: Sequence[str], *, provider: str) -> str:
@@ -112,6 +112,10 @@ class ProviderHttpClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    @property
+    def is_open(self) -> bool:
+        return self._client is not None
 
     @property
     def client(self) -> httpx.AsyncClient:

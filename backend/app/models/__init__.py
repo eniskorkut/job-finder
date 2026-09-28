@@ -18,6 +18,7 @@ from app.models.enums import (
     WorkMode,
 )
 from app.models.job import Job, JobMatch
+from app.models.llm import CVProfile, LlmUsage
 from app.models.mail_account import MailAccount
 from app.models.notification import NotificationHistory
 from app.models.oauth import OAuthState
@@ -27,6 +28,7 @@ from app.models.sync import SyncHistory
 from app.models.sync_job import (
     JobSource,
     ProcessedMessage,
+    ScoringItem,
     SyncCheckpoint,
     SyncJob,
     SyncJobAccount,
@@ -36,6 +38,7 @@ from app.models.user import User, UserInvitation, UserSession
 
 __all__ = [
     "CV",
+    "CVProfile",
     "ConnectionStatus",
     "CursorKind",
     "DescriptionStatus",
@@ -48,11 +51,13 @@ __all__ = [
     "NotificationChannel",
     "NotificationHistory",
     "NotificationStatus",
+    "LlmUsage",
     "OAuthClientConfig",
     "OAuthState",
     "ProcessedMessage",
     "ProcessedMessageStatus",
     "Provider",
+    "ScoringItem",
     "SyncCheckpoint",
     "SyncHistory",
     "SyncJob",

@@ -73,17 +73,22 @@ class UserService:
         return user
 
     def overview(self, user: User) -> OverviewResponse:
+        from app.integrations.deepseek import DeepSeekScoringClient
+        from app.services.notification_service import NotificationService
+
         preferences = self.preferences.get_or_create(user)
         stats = self.jobs.stats(user.id, preferences.min_match_score)
         last_sync = self.sync_history.latest_for_user(user.id)
         accounts = self.accounts.list_for_user(user.id)
-
-        telegram = self.telegram.get_for_user(user.id)
-        telegram_status = telegram.status if telegram is not None else ConnectionStatus.DISCONNECTED.value
         active_job = self.sync_jobs.active_for_user(user.id)
         latest_job = self.sync_jobs.latest_for_user(user.id)
         connected_accounts = sum(
             1 for account in accounts if account.status == ConnectionStatus.CONNECTED.value
+        )
+
+        telegram = self.telegram.get_for_user(user.id)
+        telegram_status = (
+            telegram.status if telegram is not None else ConnectionStatus.DISCONNECTED.value
         )
 
         integrations = [
@@ -94,9 +99,7 @@ class UserService:
                 available=True,
                 account_count=sum(1 for a in accounts if a.provider == "gmail"),
                 detail="Kendi Google OAuth uygulamanızla bağlanır.",
-                last_synced_at=_max_dt(
-                    [a.last_synced_at for a in accounts if a.provider == "gmail"]
-                ),
+                last_synced_at=_max_dt([a.last_synced_at for a in accounts if a.provider == "gmail"]),
             ),
             IntegrationStatusSummary(
                 provider="outlook",
@@ -105,17 +108,15 @@ class UserService:
                 available=True,
                 account_count=sum(1 for a in accounts if a.provider == "outlook"),
                 detail="Kendi Microsoft Entra uygulamanızla bağlanır.",
-                last_synced_at=_max_dt(
-                    [a.last_synced_at for a in accounts if a.provider == "outlook"]
-                ),
+                last_synced_at=_max_dt([a.last_synced_at for a in accounts if a.provider == "outlook"]),
             ),
             IntegrationStatusSummary(
                 provider="telegram",
                 label="Telegram",
                 status=telegram_status,
-                available=False,
+                available=True,
                 account_count=1 if telegram_status == ConnectionStatus.CONNECTED.value else 0,
-                detail="Telegram bildirimleri 3. aşamada eklenecek.",
+                detail=telegram.username or "Kullanıcı bazlı bot token ve Chat ID ile bildirim.",
                 last_synced_at=telegram.linked_at if telegram else None,
             ),
         ]
@@ -130,9 +131,18 @@ class UserService:
         elif last_sync is not None:
             last_sync_at = last_sync.started_at
             last_sync_status = last_sync.status
+
+        manual_scan = self.sync_jobs.last_by_kind_and_trigger(
+            user.id, kind="mail_scan", trigger="manual"
+        )
+        auto_scan = self.sync_jobs.last_by_kind_and_trigger(
+            user.id, kind="mail_scan", trigger="scheduled"
+        )
+        auto_scan_at = _job_timestamp(auto_scan) or preferences.last_auto_scan_at
+
         next_scan_at = None
         if preferences.daily_scan_enabled and last_sync_at is not None:
-            next_scan_at = last_sync_at + timedelta(hours=preferences.scan_interval_hours)
+            next_scan_at = preferences.next_scan_at
 
         return OverviewResponse(
             total_jobs=stats["total_jobs"],
@@ -149,8 +159,29 @@ class UserService:
             sync_available=True,
             connected_accounts=connected_accounts,
             active_job_id=active_job.id if active_job else None,
+            active_job_kind=active_job.kind if active_job else None,
             worker_hint="python -m app.worker",
+            real_jobs=stats["real_jobs"],
+            discovered_today=stats["discovered_today"],
+            analyzed_jobs=stats["analyzed_jobs"],
+            pending_analysis=stats["pending_analysis"],
+            failed_analysis=stats["failed_analysis"],
+            notified_jobs=stats["notified_jobs"],
+            average_score=stats["average_score"],
+            last_manual_scan_at=_job_timestamp(manual_scan),
+            last_auto_scan_at=auto_scan_at,
+            next_auto_scan_at=preferences.next_scan_at,
+            auto_scan_enabled=bool(preferences.daily_scan_enabled),
+            scan_interval_hours=preferences.scan_interval_hours,
+            llm=DeepSeekScoringClient().describe(),
+            notifications=NotificationService(self.db).summary(user),
         )
+
+
+def _job_timestamp(job) -> datetime | None:
+    if job is None:
+        return None
+    return job.finished_at or job.started_at or job.requested_at
 
 
 def _aggregate_status(accounts: list, provider: str) -> str:

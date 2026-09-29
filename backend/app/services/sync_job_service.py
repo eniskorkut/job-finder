@@ -7,6 +7,7 @@ import logging
 import socket
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -199,6 +200,7 @@ class SyncRunner:
         telegram_factory=None,
         now: datetime | None = None,
         clock_now: datetime | None = None,
+        execution_hook: object | None = None,
     ) -> None:
         self.worker_id = worker_id or default_worker_id()
         self.session_factory = session_factory
@@ -207,6 +209,7 @@ class SyncRunner:
         self.telegram_factory = telegram_factory
         self._now = now
         self._explicit_clock_now = clock_now
+        self._execution_hook = execution_hook
 
     def _clock_now(self) -> datetime:
         return self._explicit_clock_now or datetime.now(timezone.utc)
@@ -246,6 +249,22 @@ class SyncRunner:
             with self.session_factory() as session:
                 job = session.get(SyncJob, job_id)
                 kind = (job.kind if job else None) or "mail_scan"
+                payload = (job.payload if job else None) or {}
+                attempt = job.attempt if job else 1
+
+            # Test provider / barrier hook for controlled acceptance testing
+            test_delay = payload.get("test_delay_seconds") or settings.test_job_delay_seconds
+            test_barrier = payload.get("test_barrier") or settings.test_barrier_file
+
+            if self._execution_hook is not None:
+                await self._execution_hook(job_id, attempt)
+            elif test_barrier and attempt == 1:
+                barrier_path = Path(settings.data_dir) / test_barrier
+                while barrier_path.exists():
+                    await asyncio.sleep(0.5)
+            elif test_delay > 0 and attempt == 1:
+                await asyncio.sleep(test_delay)
+
             if kind == "scoring":
                 status = await self._execute_scoring(job_id)
             elif kind == "notify":

@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = 2.0
     worker_id: str = ""
 
+    # Testing & simulation hooks (never active in production unless explicitly set)
+    test_job_delay_seconds: float = 0.0
+    test_barrier_file: str | None = None
+
     # Outbound HTTP
     sync_http_timeout_seconds: float = 30.0
     sync_http_max_connections: int = 10

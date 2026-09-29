@@ -186,4 +186,70 @@ describe("JobList", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Tekrar dene" })).toBeInTheDocument();
   });
+
+  it("renders freshness badge, enrichment badge, and external navigation links", async () => {
+    const enrichedJob = {
+      ...jobPage,
+      items: [
+        {
+          ...jobPage.items[0],
+          freshness_status: "fresh" as const,
+          enrichment_status: "enriched" as const,
+          linkedin_url: "https://www.linkedin.com/jobs/view/123456789",
+          canonical_url: "https://boards.greenhouse.io/novatech/jobs/987654",
+        },
+      ],
+    };
+    mockJobsApi({ jobs: enrichedJob });
+    render(<JobList />);
+
+    expect(await screen.findByText("Taze (0-3 gün)")).toBeInTheDocument();
+    expect(screen.getByText("Zenginleştirildi")).toBeInTheDocument();
+
+    const linkedinLink = screen.getByRole("link", { name: /LinkedIn'de Aç/i });
+    expect(linkedinLink).toHaveAttribute("href", "https://www.linkedin.com/jobs/view/123456789");
+    expect(linkedinLink).toHaveAttribute("target", "_blank");
+    expect(linkedinLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    const sourceLink = screen.getByRole("link", { name: /Başvuru \/ Kaynak/i });
+    expect(sourceLink).toHaveAttribute("href", "https://boards.greenhouse.io/novatech/jobs/987654");
+    expect(sourceLink).toHaveAttribute("target", "_blank");
+    expect(sourceLink).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("triggers refresh when Tazele button is clicked", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockJobsApi();
+    render(<JobList />);
+
+    await screen.findByText("Senior AI Engineer");
+    const refreshBtn = screen.getByRole("button", { name: /Tazele/i });
+    expect(refreshBtn).toBeInTheDocument();
+
+    await user.click(refreshBtn);
+
+    await waitFor(() => {
+      const refreshCall = fetchMock.mock.calls.some(([url, options]) =>
+        String(url).includes("/refresh") && (options as RequestInit)?.method === "POST",
+      );
+      expect(refreshCall).toBe(true);
+    });
+  });
+
+  it("passes freshness filter to the API", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockJobsApi();
+    render(<JobList />);
+    await screen.findByText("Senior AI Engineer");
+
+    await user.selectOptions(screen.getByLabelText("Tazelik durumu"), "fresh");
+
+    await waitFor(() => {
+      const last = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.includes("/api/v1/jobs?"))
+        .pop();
+      expect(last).toContain("freshness_status=fresh");
+    });
+  });
 });

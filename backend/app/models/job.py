@@ -76,6 +76,41 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # Phase 4: Job Discovery, Enrichment & Freshness
+    linkedin_url: Mapped[str | None] = mapped_column(Text, default=None)
+    company_job_url: Mapped[str | None] = mapped_column(Text, default=None)
+    canonical_url: Mapped[str | None] = mapped_column(Text, default=None)
+    application_url: Mapped[str | None] = mapped_column(Text, default=None)
+    source_url: Mapped[str | None] = mapped_column(Text, default=None)
+
+    email_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    valid_through: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    last_enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    posted_at_source: Mapped[str | None] = mapped_column(String(30), default=None)
+    posted_at_confidence: Mapped[str | None] = mapped_column(String(20), default=None)
+
+    freshness_status: Mapped[str] = mapped_column(
+        String(20), default="fresh", server_default="fresh", index=True
+    )
+    availability_status: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown"
+    )
+    enrichment_status: Mapped[str] = mapped_column(
+        String(30), default="pending", server_default="pending", index=True
+    )
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), default=None, index=True
+    )
+
     is_mock: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_payload: Mapped[dict | None] = mapped_column(JSON, default=None)
 
@@ -83,6 +118,51 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     match: Mapped["JobMatch | None"] = relationship(
         back_populates="job", cascade="all, delete-orphan", uselist=False
     )
+    web_sources: Mapped[list["JobWebSource"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
+
+
+class JobWebSource(UUIDPrimaryKeyMixin, Base):
+    """Web source discovered for a job (ATS, official site, etc.)."""
+
+    __tablename__ = "job_web_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id", "normalized_url", name="uq_job_web_sources_job_normalized_url"
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+
+    url: Mapped[str] = mapped_column(Text)
+    normalized_url: Mapped[str] = mapped_column(Text)
+    host: Mapped[str] = mapped_column(String(255))
+    source_type: Mapped[str] = mapped_column(String(30))
+    trust_level: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    match_confidence: Mapped[str] = mapped_column(
+        String(20), default="none", server_default="none"
+    )
+    title: Mapped[str | None] = mapped_column(Text, default=None)
+    snippet: Mapped[str | None] = mapped_column(Text, default=None)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    content_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    selected_as_canonical: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
+    job: Mapped["Job"] = relationship(back_populates="web_sources")
 
 
 class JobMatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):

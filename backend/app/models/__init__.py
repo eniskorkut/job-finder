@@ -17,7 +17,7 @@ from app.models.enums import (
     UserRole,
     WorkMode,
 )
-from app.models.job import Job, JobMatch
+from app.models.job import Job, JobMatch, JobWebSource
 from app.models.llm import CVProfile, LlmUsage
 from app.models.mail_account import MailAccount
 from app.models.notification import NotificationHistory
@@ -26,6 +26,7 @@ from app.models.oauth_client import OAuthClientConfig
 from app.models.preferences import UserPreference
 from app.models.sync import SyncHistory
 from app.models.sync_job import (
+    EnrichmentItem,
     JobSource,
     ProcessedMessage,
     ScoringItem,
@@ -42,10 +43,12 @@ __all__ = [
     "ConnectionStatus",
     "CursorKind",
     "DescriptionStatus",
+    "EnrichmentItem",
     "ErrorClass",
     "Job",
     "JobMatch",
     "JobSource",
+    "JobWebSource",
     "MailAccount",
     "MatchStatus",
     "NotificationChannel",

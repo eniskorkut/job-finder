@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
 
-from app.models.job import Job, JobMatch
+from app.models.job import Job, JobMatch, JobWebSource
 from app.models.mail_account import MailAccount
 from app.repositories.base import Repository
 
@@ -40,6 +40,8 @@ class JobRepository(Repository[Job]):
         max_score: int | None = None,
         analysis_status: str | None = None,
         notification: str | None = None,
+        freshness_status: str | None = None,
+        enrichment_status: str | None = None,
         sort: str = "recent",
         offset: int = 0,
         limit: int = 20,
@@ -64,6 +66,10 @@ class JobRepository(Repository[Job]):
                 stmt = stmt.where(Job.work_mode == work_mode)
             if source:
                 stmt = stmt.where(Job.source == source)
+            if freshness_status:
+                stmt = stmt.where(Job.freshness_status == freshness_status)
+            if enrichment_status:
+                stmt = stmt.where(Job.enrichment_status == enrichment_status)
             return stmt
 
         count_stmt = apply_filters(
@@ -337,3 +343,83 @@ class MailAccountRepository(Repository[MailAccount]):
         account.token_expires_at = None
         account.last_error = None
         self.db.flush()
+
+
+class JobWebSourceRepository(Repository[JobWebSource]):
+    model = JobWebSource
+
+    def list_for_job(self, job_id: uuid.UUID) -> list[JobWebSource]:
+        stmt = (
+            select(JobWebSource)
+            .where(JobWebSource.job_id == job_id)
+            .order_by(JobWebSource.trust_level.desc(), JobWebSource.discovered_at.desc())
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def get_by_normalized_url(
+        self, job_id: uuid.UUID, normalized_url: str
+    ) -> JobWebSource | None:
+        stmt = select(JobWebSource).where(
+            JobWebSource.job_id == job_id,
+            JobWebSource.normalized_url == normalized_url,
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def upsert(
+        self,
+        *,
+        user_id: uuid.UUID,
+        job_id: uuid.UUID,
+        url: str,
+        normalized_url: str,
+        host: str,
+        source_type: str,
+        trust_level: int = 0,
+        match_confidence: str = "none",
+        title: str | None = None,
+        snippet: str | None = None,
+        http_status: int | None = None,
+        content_hash: str | None = None,
+        selected_as_canonical: bool = False,
+    ) -> JobWebSource:
+        existing = self.get_by_normalized_url(job_id, normalized_url)
+        if existing is not None:
+            existing.url = url
+            existing.host = host
+            existing.source_type = source_type
+            existing.trust_level = max(existing.trust_level, trust_level)
+            existing.match_confidence = match_confidence or existing.match_confidence
+            if title:
+                existing.title = title
+            if snippet:
+                existing.snippet = snippet
+            if http_status is not None:
+                existing.http_status = http_status
+            if content_hash:
+                existing.content_hash = content_hash
+            if selected_as_canonical:
+                existing.selected_as_canonical = True
+            existing.last_checked_at = datetime.now(timezone.utc)
+            self.db.flush()
+            return existing
+
+        source = JobWebSource(
+            user_id=user_id,
+            job_id=job_id,
+            url=url,
+            normalized_url=normalized_url,
+            host=host,
+            source_type=source_type,
+            trust_level=trust_level,
+            match_confidence=match_confidence,
+            title=title,
+            snippet=snippet,
+            http_status=http_status,
+            content_hash=content_hash,
+            selected_as_canonical=selected_as_canonical,
+            discovered_at=datetime.now(timezone.utc),
+            last_checked_at=datetime.now(timezone.utc),
+        )
+        self.db.add(source)
+        self.db.flush()
+        return source

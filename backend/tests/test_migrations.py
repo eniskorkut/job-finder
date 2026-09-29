@@ -31,6 +31,9 @@ EXPECTED_TABLES = {
     "cv_profiles",
     "llm_usage",
     "scoring_items",
+    # phase 4
+    "job_web_sources",
+    "enrichment_items",
 }
 
 

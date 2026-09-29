@@ -10,7 +10,14 @@ from sqlalchemy import inspect, text
 from app.core.config import settings
 from app.db.session import engine
 
-REQUIRED_TABLES = {"sync_jobs", "scoring_items", "cv_profiles", "telegram_integrations"}
+REQUIRED_TABLES = {
+    "sync_jobs",
+    "scoring_items",
+    "cv_profiles",
+    "telegram_integrations",
+    "job_web_sources",
+    "enrichment_items",
+}
 
 
 def check_health(engine_instance=None) -> int:

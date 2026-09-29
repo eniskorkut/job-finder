@@ -182,3 +182,42 @@ def test_notifications_are_scoped_per_user(api, seeded):
     assert notifications["total"] >= 1
     assert all(item["status"] == "skipped" for item in notifications["items"])
     assert all(item["is_mock"] for item in notifications["items"])
+
+
+def test_job_read_and_detail_includes_phase4_fields(api, seeded):
+    login_seeded(api, "ai_hunter")
+    jobs_res = api.get("/api/v1/jobs?page_size=1")
+    assert jobs_res.status_code == 200
+    job = jobs_res.json()["items"][0]
+
+    assert "freshness_status" in job
+    assert "availability_status" in job
+    assert "enrichment_status" in job
+    assert "linkedin_url" in job
+    assert "canonical_url" in job
+
+    detail_res = api.get(f"/api/v1/jobs/{job['id']}")
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert "web_sources" in detail
+    assert isinstance(detail["web_sources"], list)
+
+
+def test_refresh_single_job_endpoint_returns_202(api, seeded):
+    login_seeded(api, "ai_hunter")
+    jobs_res = api.get("/api/v1/jobs?page_size=1")
+    job_id = jobs_res.json()["items"][0]["id"]
+
+    res = api.post(f"/api/v1/jobs/{job_id}/refresh")
+    assert res.status_code == 202
+    body = res.json()
+    assert body["job_id"] == job_id
+    assert "sync_job_id" in body
+    assert body["status"] == "queued"
+    assert "kuyruğa alındı" in body["message"]
+
+    # Verify user isolation: data_hunter cannot refresh ai_hunter's job
+    api.post("/api/v1/auth/logout")
+    login_seeded(api, "data_hunter")
+    other_res = api.post(f"/api/v1/jobs/{job_id}/refresh")
+    assert other_res.status_code == 404

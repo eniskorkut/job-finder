@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.integrations.base import JobPostingCandidate, RawMessage
 from app.integrations.parsing.dedupe import fingerprint_hash, normalize_url
 from app.models.enums import DescriptionStatus, JobSource as JobSourceKind
@@ -25,6 +26,20 @@ from app.models.enums import WorkMode
 from app.models.job import Job, JobMatch
 from app.models.mail_account import MailAccount
 from app.repositories.sync_jobs import JobSourceRepository
+from app.services.job_enrichment.freshness import calculate_freshness, evaluate_posted_at
+from app.services.job_enrichment.url_utils import (
+    compute_content_hash,
+    is_linkedin_url,
+    normalize_linkedin_job_url,
+)
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 @dataclass(slots=True)
@@ -51,7 +66,7 @@ class JobIngestService:
         result = IngestResult(jobs_found=0)
         for candidate in candidates:
             job, is_new = self._upsert(
-                user_id=user_id, account=account, candidate=candidate
+                user_id=user_id, account=account, candidate=candidate, message=message
             )
             if job is None:
                 continue
@@ -83,6 +98,7 @@ class JobIngestService:
         user_id: uuid.UUID,
         account: MailAccount,
         candidate: JobPostingCandidate,
+        message: RawMessage | None = None,
     ) -> tuple[Job | None, bool]:
         title = " ".join((candidate.title or "").split())[:300]
         company = " ".join((candidate.company or "").split())[:200] or "Bilinmiyor"
@@ -104,6 +120,29 @@ class JobIngestService:
             fingerprint=fingerprint,
         )
 
+        linkedin_url = None
+        if is_linkedin_url(candidate.url) or candidate.external_id:
+            linkedin_url = normalize_linkedin_job_url(candidate.url, candidate.external_id)
+
+        now = datetime.now(timezone.utc)
+        email_received_at = _aware(message.received_at) if message else now
+        date_eval = evaluate_posted_at(
+            email_received_at=email_received_at,
+            discovered_at=now,
+            now=now,
+        )
+        freshness_res = calculate_freshness(
+            effective_posted_at=date_eval.effective_posted_at,
+            now=now,
+        )
+
+        needs_enrichment = (
+            candidate.description_status == DescriptionStatus.INSUFFICIENT.value
+            or not (candidate.description and candidate.description.strip())
+        )
+        enrichment_status = "pending" if needs_enrichment else "skipped"
+        c_hash = compute_content_hash(candidate.description)
+
         is_new = existing is None
         if existing is None:
             job = Job(
@@ -119,10 +158,19 @@ class JobIngestService:
                 # Only the cleaned URL is stored; tracking parameters are gone.
                 url=normalized,
                 url_normalized=normalized,
+                source_url=normalized,
+                linkedin_url=linkedin_url,
                 fingerprint_hash=fingerprint,
                 description_status=candidate.description_status,
-                posted_at=None,
-                discovered_at=datetime.now(timezone.utc),
+                email_received_at=email_received_at,
+                posted_at=date_eval.effective_posted_at,
+                posted_at_source=date_eval.posted_at_source,
+                posted_at_confidence=date_eval.posted_at_confidence,
+                freshness_status=freshness_res.freshness_status,
+                availability_status=freshness_res.availability_status,
+                enrichment_status=enrichment_status,
+                content_hash=c_hash,
+                discovered_at=now,
                 is_mock=False,
                 raw_payload={
                     "provider": account.provider,
@@ -147,7 +195,7 @@ class JobIngestService:
             return job, True
 
         # Duplicate: enrich only, never overwrite richer content with poorer.
-        self._enrich(existing, candidate)
+        self._enrich(existing, candidate, linkedin_url=linkedin_url, message=message)
         existing.mail_account_id = existing.mail_account_id or account.id
         return existing, False
 
@@ -181,14 +229,28 @@ class JobIngestService:
             )
         ).scalars().first()
 
-    def _enrich(self, job: Job, candidate: JobPostingCandidate) -> None:
+    def _enrich(
+        self,
+        job: Job,
+        candidate: JobPostingCandidate,
+        linkedin_url: str | None = None,
+        message: RawMessage | None = None,
+    ) -> None:
         if len(candidate.description or "") > len(job.description or ""):
             job.description = candidate.description
             job.description_status = candidate.description_status
+            job.content_hash = compute_content_hash(candidate.description)
         if not job.url:
             job.url = normalize_url(candidate.url)
         if not job.url_normalized:
             job.url_normalized = normalize_url(candidate.url)
+        if not job.linkedin_url and linkedin_url:
+            job.linkedin_url = linkedin_url
+        if message and message.received_at:
+            msg_dt = _aware(message.received_at)
+            job_dt = _aware(job.email_received_at)
+            if not job_dt or (msg_dt and msg_dt < job_dt):
+                job.email_received_at = msg_dt
         if not job.external_id and candidate.external_id:
             job.external_id = candidate.external_id
         if not job.fingerprint_hash:

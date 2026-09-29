@@ -58,6 +58,26 @@ export interface JobMatch {
   match_details: Record<string, DimensionMatch>;
 }
 
+export type FreshnessStatus = "fresh" | "aging" | "stale" | "expired";
+export type AvailabilityStatus = "active" | "closed" | "unknown";
+export type EnrichmentStatus = "pending" | "enriched" | "skipped" | "not_found" | "failed";
+
+export interface JobWebSource {
+  id: string;
+  url: string;
+  normalized_url: string;
+  host: string;
+  source_type: string;
+  trust_level: number;
+  match_confidence: string;
+  title?: string | null;
+  snippet?: string | null;
+  http_status?: number | null;
+  selected_as_canonical: boolean;
+  discovered_at: string;
+  last_checked_at?: string | null;
+}
+
 export interface Job {
   id: string;
   title: string;
@@ -74,6 +94,22 @@ export interface Job {
   discovered_at: string;
   description_status: "ok" | "insufficient_description";
   match: JobMatch | null;
+
+  // Phase 4 fields
+  linkedin_url?: string | null;
+  company_job_url?: string | null;
+  canonical_url?: string | null;
+  application_url?: string | null;
+  source_url?: string | null;
+  email_received_at?: string | null;
+  valid_through?: string | null;
+  last_verified_at?: string | null;
+  last_enriched_at?: string | null;
+  posted_at_source?: string | null;
+  posted_at_confidence?: string | null;
+  freshness_status?: FreshnessStatus;
+  availability_status?: AvailabilityStatus;
+  enrichment_status?: EnrichmentStatus;
 }
 
 export interface JobSource {
@@ -90,6 +126,7 @@ export interface JobDetail extends Job {
   description: string | null;
   mail_account_email: string | null;
   sources: JobSource[];
+  web_sources?: JobWebSource[];
   analysis_cv: {
     checksum: string | null;
     filename: string | null;
@@ -103,6 +140,13 @@ export interface ReanalyzeResponse {
   job_id: string;
   total: number;
   status: string;
+  message: string;
+}
+
+export interface RefreshJobResponse {
+  job_id: string;
+  status: string;
+  sync_job_id: string;
   message: string;
 }
 

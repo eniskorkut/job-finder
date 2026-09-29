@@ -52,6 +52,22 @@ class JobSourceRead(ORMModel):
     account_email: str | None = None
 
 
+class JobWebSourceRead(ORMModel):
+    id: uuid.UUID
+    url: str
+    normalized_url: str
+    host: str
+    source_type: str
+    trust_level: int
+    match_confidence: str
+    title: str | None = None
+    snippet: str | None = None
+    http_status: int | None = None
+    selected_as_canonical: bool = False
+    discovered_at: datetime
+    last_checked_at: datetime | None = None
+
+
 class JobRead(ORMModel):
     id: uuid.UUID
     title: str
@@ -69,12 +85,36 @@ class JobRead(ORMModel):
     description_status: str = "ok"
     match: JobMatchRead | None = None
 
+    # Phase 4 fields
+    linkedin_url: str | None = None
+    company_job_url: str | None = None
+    canonical_url: str | None = None
+    application_url: str | None = None
+    source_url: str | None = None
+    email_received_at: datetime | None = None
+    valid_through: datetime | None = None
+    last_verified_at: datetime | None = None
+    last_enriched_at: datetime | None = None
+    posted_at_source: str | None = None
+    posted_at_confidence: str | None = None
+    freshness_status: str = "fresh"
+    availability_status: str = "unknown"
+    enrichment_status: str = "pending"
+
 
 class JobDetail(JobRead):
     description: str | None = None
     mail_account_email: str | None = None
     sources: list[JobSourceRead] = Field(default_factory=list)
+    web_sources: list[JobWebSourceRead] = Field(default_factory=list)
     analysis_cv: dict | None = None
+
+
+class RefreshJobResponse(BaseModel):
+    job_id: uuid.UUID
+    sync_job_id: uuid.UUID
+    status: str
+    message: str
 
 
 class JobMatchUpdate(BaseModel):

@@ -99,3 +99,54 @@ export const connectionStatusLabels: Record<string, string> = {
   needs_reauth: "Yeniden yetki gerekli",
   error: "Hata",
 };
+
+export const freshnessLabels: Record<string, string> = {
+  fresh: "Taze (0-3g)",
+  aging: "Güncel (4-7g)",
+  stale: "Eski (8-14g)",
+  expired: "Süresi doldu (>14g)",
+};
+
+export const freshnessVariants: Record<string, "success" | "warning" | "danger" | "muted"> = {
+  fresh: "success",
+  aging: "warning",
+  stale: "warning",
+  expired: "danger",
+};
+
+export const availabilityLabels: Record<string, string> = {
+  active: "Yayında",
+  closed: "Kapanmış",
+  unknown: "Bilinmiyor",
+};
+
+export const availabilityVariants: Record<string, "success" | "danger" | "muted"> = {
+  active: "success",
+  closed: "danger",
+  unknown: "muted",
+};
+
+export const enrichmentLabels: Record<string, string> = {
+  enriched: "Zenginleştirildi",
+  pending: "Zenginleştirme bekliyor",
+  skipped: "Atlandı (Açıklama yeterli)",
+  not_found: "Aday bulunamadı",
+  failed: "Zenginleştirme hatası",
+};
+
+export const enrichmentVariants: Record<string, "accent" | "neutral" | "muted" | "danger"> = {
+  enriched: "accent",
+  pending: "neutral",
+  skipped: "muted",
+  not_found: "muted",
+  failed: "danger",
+};
+
+export const sourceTypeLabels: Record<string, string> = {
+  ats: "Resmi ATS",
+  company_career: "Şirket Kariyer Sayfası",
+  official_site: "Resmi Web Sitesi",
+  external_job_board: "İlan Portalı",
+  other: "Web Kaynağı",
+};
+

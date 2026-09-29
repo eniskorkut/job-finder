@@ -6,7 +6,9 @@ import {
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   MapPin,
+  RefreshCw,
   SearchX,
   SlidersHorizontal,
   X,
@@ -20,10 +22,18 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/form";
 import { ScoreBadge } from "@/components/ui/score";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { api, buildQuery } from "@/lib/api";
-import { formatRelative, statusLabels, workModeLabels } from "@/lib/format";
+import { api, buildQuery, ApiError } from "@/lib/api";
+import {
+  formatRelative,
+  statusLabels,
+  workModeLabels,
+  freshnessLabels,
+  freshnessVariants,
+  enrichmentLabels,
+  enrichmentVariants,
+} from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
-import type { Job, JobFilterOptions, Page } from "@/lib/types";
+import type { Job, JobFilterOptions, Page, RefreshJobResponse } from "@/lib/types";
 
 interface Filters {
   search: string;
@@ -34,6 +44,7 @@ interface Filters {
   maxScore: string;
   analysisStatus: string;
   notification: string;
+  freshness: string;
   sort: string;
 }
 
@@ -46,6 +57,7 @@ const emptyFilters: Filters = {
   maxScore: "",
   analysisStatus: "",
   notification: "",
+  freshness: "",
   sort: "score",
 };
 
@@ -81,6 +93,9 @@ export function JobList({
     return () => clearTimeout(timer);
   }, [filters.search]);
 
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+
   const query = useMemo(
     () =>
       buildQuery({
@@ -92,6 +107,7 @@ export function JobList({
         max_score: filters.maxScore,
         analysis_status: filters.analysisStatus,
         notification: filters.notification,
+        freshness_status: filters.freshness,
         sort: filters.sort,
         page,
         page_size: pageSize,
@@ -105,6 +121,7 @@ export function JobList({
       filters.maxScore,
       filters.analysisStatus,
       filters.notification,
+      filters.freshness,
       filters.sort,
       page,
       pageSize,
@@ -123,6 +140,7 @@ export function JobList({
     filters.maxScore,
     filters.analysisStatus,
     filters.notification,
+    filters.freshness,
   ].filter(Boolean).length;
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
@@ -136,6 +154,22 @@ export function JobList({
       jobs.refetch();
     } catch {
       // Mutations surface their own state on the next fetch; keep the row.
+    }
+  }
+
+  async function handleRefresh(jobId: string) {
+    setRefreshingId(jobId);
+    setRefreshNotice(null);
+    try {
+      const res = await api.post<RefreshJobResponse>(`/api/v1/jobs/${jobId}/refresh`);
+      setRefreshNotice(res.message || "Tazeleme başlatıldı.");
+      jobs.refetch();
+    } catch (err) {
+      setRefreshNotice(
+        err instanceof ApiError ? err.message : "Tazeleme başlatılamadı.",
+      );
+    } finally {
+      setRefreshingId(null);
     }
   }
 
@@ -248,6 +282,17 @@ export function JobList({
               <option value="pending">Bildirilmedi</option>
             </Select>
             <Select
+              value={filters.freshness}
+              onChange={(event) => update("freshness", event.target.value)}
+              aria-label="Tazelik durumu"
+            >
+              <option value="">Tüm tazelik durumları</option>
+              <option value="fresh">Taze (0-3 gün)</option>
+              <option value="aging">Güncel (4-7 gün)</option>
+              <option value="stale">Eski (8-14 gün)</option>
+              <option value="expired">Süresi doldu (&gt;14 gün)</option>
+            </Select>
+            <Select
               value={filters.sort}
               onChange={(event) => update("sort", event.target.value)}
               aria-label="Sıralama"
@@ -263,6 +308,19 @@ export function JobList({
           </div>
         </div>
       </Card>
+
+      {refreshNotice ? (
+        <div className="flex items-center justify-between rounded-[var(--radius-card)] bg-accent-soft px-3.5 py-2 text-[12.5px] text-accent-ink">
+          <span>{refreshNotice}</span>
+          <button
+            type="button"
+            onClick={() => setRefreshNotice(null)}
+            className="ml-2 text-accent-ink hover:opacity-75"
+          >
+            <X aria-hidden className="size-3.5" strokeWidth={2} />
+          </button>
+        </div>
+      ) : null}
 
       {jobs.loading ? (
         <SkeletonRows rows={4} />
@@ -318,6 +376,21 @@ export function JobList({
                         {job.is_mock ? (
                           <Badge variant="info">Örnek veri</Badge>
                         ) : null}
+                        {job.freshness_status ? (
+                          <Badge
+                            variant={
+                              freshnessVariants[job.freshness_status] ?? "neutral"
+                            }
+                          >
+                            {freshnessLabels[job.freshness_status] ?? job.freshness_status}
+                          </Badge>
+                        ) : null}
+                        {job.availability_status === "closed" ? (
+                          <Badge variant="danger">Kapanmış</Badge>
+                        ) : null}
+                        {job.enrichment_status === "enriched" ? (
+                          <Badge variant="accent">Zenginleştirildi</Badge>
+                        ) : null}
                         {job.match ? (
                           <Badge
                             variant={
@@ -351,6 +424,33 @@ export function JobList({
                           <Badge variant="info">bildirildi</Badge>
                         ) : null}
                       </div>
+
+                      {(job.linkedin_url || job.canonical_url || job.application_url || job.company_job_url) ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-3 pt-1 border-t border-line/30">
+                          {job.linkedin_url ? (
+                            <a
+                              href={job.linkedin_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
+                            >
+                              <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
+                              LinkedIn&apos;de Aç
+                            </a>
+                          ) : null}
+                          {(job.canonical_url || job.application_url || job.company_job_url) ? (
+                            <a
+                              href={job.canonical_url || job.application_url || job.company_job_url!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
+                            >
+                              <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
+                              Başvuru / Kaynak
+                            </a>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -370,6 +470,16 @@ export function JobList({
                         </Badge>
                       ) : null}
                       <ScoreBadge score={job.match?.score ?? null} />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={refreshingId === job.id}
+                        onClick={() => handleRefresh(job.id)}
+                        title="Web araması ve keşif ile ilanı tazele"
+                      >
+                        <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
+                        Tazele
+                      </Button>
                       {job.match?.status === "dismissed" ? (
                         <Button
                           variant="secondary"

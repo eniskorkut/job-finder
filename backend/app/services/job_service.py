@@ -46,6 +46,8 @@ class JobService:
         max_score: int | None = None,
         analysis_status: str | None = None,
         notification: str | None = None,
+        freshness_status: str | None = None,
+        enrichment_status: str | None = None,
         sort: str = "recent",
         page: int = 1,
         page_size: int = 20,
@@ -62,6 +64,8 @@ class JobService:
             max_score=max_score,
             analysis_status=analysis_status,
             notification=notification,
+            freshness_status=freshness_status,
+            enrichment_status=enrichment_status,
             sort=sort,
             offset=(page - 1) * page_size,
             limit=page_size,
@@ -95,8 +99,15 @@ class JobService:
         for source in JobSourceRepository(self.db).list_for_job(job.id):
             item = JobSourceRead.model_validate(source)
             item.account_email = accounts.get(source.mail_account_id)
-            sources.append(item)
         detail.sources = sources
+
+        from app.repositories.jobs import JobWebSourceRepository
+        from app.schemas.job import JobWebSourceRead
+
+        detail.web_sources = [
+            JobWebSourceRead.model_validate(ws)
+            for ws in JobWebSourceRepository(self.db).list_for_job(job.id)
+        ]
 
         if detail.match is not None and detail.match.analyzed_at:
             cv = (

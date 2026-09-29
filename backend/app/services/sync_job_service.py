@@ -127,6 +127,33 @@ class SyncJobService:
                         "finished_at": item.finished_at,
                     }
                 )
+        elif (job.kind or "mail_scan") == "enrichment":
+            from app.repositories.sync_jobs import EnrichmentItemRepository
+
+            job_lookup = {
+                candidate.id: candidate
+                for candidate in self.db.execute(
+                    select(Job).where(Job.user_id == user.id)
+                ).scalars()
+            }
+            for item in EnrichmentItemRepository(self.db).list_for_job(job.id):
+                candidate = job_lookup.get(item.job_id)
+                items.append(
+                    {
+                        "id": item.id,
+                        "job_id": item.job_id,
+                        "job_title": candidate.title if candidate else None,
+                        "company": candidate.company if candidate else None,
+                        "status": item.status,
+                        "attempt": item.attempt,
+                        "error_class": item.error_class,
+                        "error_message": item.error_message,
+                        "source_type": item.source_type,
+                        "source_url": item.source_url,
+                        "started_at": item.started_at,
+                        "finished_at": item.finished_at,
+                    }
+                )
         return {
             "job": job,
             "items": items,
@@ -265,7 +292,9 @@ class SyncRunner:
             elif test_delay > 0 and attempt == 1:
                 await asyncio.sleep(test_delay)
 
-            if kind == "scoring":
+            if kind == "enrichment":
+                status = await self._execute_enrichment(job_id)
+            elif kind == "scoring":
                 status = await self._execute_scoring(job_id)
             elif kind == "notify":
                 status = await self._execute_notify(job_id)
@@ -285,6 +314,18 @@ class SyncRunner:
             if not registered:
                 # If execution crashed or was cancelled before finishing, release job for bounded retry
                 self._release_job(job_id, error=exec_error)
+
+    async def _execute_enrichment(self, job_id: uuid.UUID) -> SyncJobStatus:
+        from app.services.enrichment_runner import EnrichmentRunner
+
+        runner = EnrichmentRunner(
+            session_factory=self.session_factory,
+            now=self._now,
+            cancel_check=lambda: self._is_cancelled(job_id),
+        )
+        outcome = await runner.run(job_id)
+        self._finish_job(job_id, outcome.status, error=outcome.error_message)
+        return outcome.status
 
     async def _execute_scoring(self, job_id: uuid.UUID) -> SyncJobStatus:
         from app.services.scoring_runner import ScoringRunner
@@ -519,14 +560,37 @@ class SyncRunner:
                         successful=status == SyncJobStatus.COMPLETED,
                     )
                 if status in {SyncJobStatus.COMPLETED, SyncJobStatus.PARTIAL_FAILED}:
+                    from app.services.enrichment_service import EnrichmentService
+
+                    with self.session_factory() as session:
+                        enrich_job = EnrichmentService(session).enqueue_for_new_jobs(user_id)
+                        session.commit()
+                    if enrich_job is not None:
+                        logger.info(
+                            "Zenginleştirme kuyruğa alındı (user=%s, job=%s)", user_id, enrich_job.id
+                        )
+                    else:
+                        from app.services.scoring_service import ScoringService
+
+                        with self.session_factory() as session:
+                            score_job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                            session.commit()
+                        if score_job is not None:
+                            logger.info(
+                                "Skorlama kuyruğa alındı (user=%s, job=%s)", user_id, score_job.id
+                            )
+            elif kind == "enrichment":
+                if status in {SyncJobStatus.COMPLETED, SyncJobStatus.PARTIAL_FAILED}:
                     from app.services.scoring_service import ScoringService
 
                     with self.session_factory() as session:
-                        job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                        score_job = ScoringService(session).enqueue_for_new_jobs(user_id)
                         session.commit()
-                    if job is not None:
+                    if score_job is not None:
                         logger.info(
-                            "Skorlama kuyruğa alındı (user=%s, job=%s)", user_id, job.id
+                            "Zenginleştirme sonrası skorlama kuyruğa alındı (user=%s, job=%s)",
+                            user_id,
+                            score_job.id,
                         )
             elif kind == "scoring":
                 if status in {SyncJobStatus.COMPLETED, SyncJobStatus.PARTIAL_FAILED}:

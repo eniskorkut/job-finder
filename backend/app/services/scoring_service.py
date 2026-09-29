@@ -75,6 +75,16 @@ class ScoringService:
             stmt = stmt.where(Job.discovered_at >= cutoff)
 
         if mode == MODE_NEW:
+            if job_id is None and not force:
+                max_age_cutoff = datetime.now(timezone.utc) - timedelta(days=settings.job_max_age_days)
+                stmt = stmt.where(
+                    (Job.freshness_status != "expired"),
+                    (Job.availability_status != "closed"),
+                    or_(
+                        Job.posted_at.is_(None),
+                        Job.posted_at >= max_age_cutoff,
+                    ),
+                )
             stmt = stmt.where(
                 or_(
                     JobMatch.id.is_(None),

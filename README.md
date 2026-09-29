@@ -3,14 +3,15 @@
 İki kullanıcının kendi e-posta hesaplarına gelen LinkedIn iş ilanlarını toplayıp CV'leriyle
 eşleştirdiği ve uygun ilanları Telegram üzerinden aldığı web uygulaması.
 
-**Durum: Aşama 3/3 tamamlandı** — ortak LLM ile CV eşleştirme, kullanıcıya özel Telegram
-bildirimi, otomatik tarama zamanlayıcısı ve uçtan uca dayanıklı pipeline.
+**Durum: Aşama 4/4 tamamlandı** — ortak LLM ile CV eşleştirme, kullanıcıya özel Telegram
+bildirimi, otomatik tarama zamanlayıcısı, SSRF korumalı Web Keşfi (SearXNG) + İş İlanı Zenginleştirme (JSON-LD) ve Tazelik analizi.
 
 | Aşama | Kapsam | Durum |
 | --- | --- | --- |
 | 1 | Mimari, kullanıcı yönetimi, oturum/CSRF, tercihler, CV yükleme, mock ilanlar, dashboard | ✅ tamamlandı |
 | 2 | Gmail + Hotmail/Outlook OAuth (kullanıcı bazlı istemci), e-posta okuma, ilan ayrıştırma, tekilleştirme, CV metin çıkarımı, kalıcı tarama kuyruğu | ✅ tamamlandı |
 | 3 | Ortak OpenAI-uyumlu LLM ile skorlama, CV profili önbelleği, kullanıcıya özel Telegram, eşik bildirimi, otomatik tarama, yeniden değerlendirme | ✅ tamamlandı |
+| 4 | Web Discovery + Job Enrichment + Freshness: SearXNG ile resmi/ATS ilan keşfi, SSRF korumalı güvenli fetcher, JSON-LD schema.org/JobPosting ayrıştırma, tazelik/tarih önceliği, provenance ve arayüz entegrasyonu | ✅ tamamlandı |
 
 - **Backend:** FastAPI + SQLAlchemy 2 + Alembic + SQLite → http://localhost:8000
 - **Frontend:** Next.js 16 + TypeScript + Tailwind CSS 4 (Better UI ilkeleri) → http://localhost:3000
@@ -671,6 +672,81 @@ kullanıldığı için):
 - **Telegram bildirim gönderimi** gerçek bir bot/chat ile denenmedi (yalnızca auth hatası
   canlı doğrulandı); gönderim yolu mock Bot API ile 19 testte doğrulanıyor.
 - Eşzamanlı çok kullanıcılı canlı yük testi yapılmadı; sınırlar testlerle doğrulanıyor.
+
+### Aşama 4: Job Discovery + Enrichment + Freshness Katmanı
+
+E-posta bildirimlerindeki kısa ve yetersiz iş ilanı açıklamalarını web araması (SearXNG) ve resmi iş ilanı sayfaları (ATS / Şirket Kariyer Siteleri) üzerinden zenginleştiren, ilanın güncelliğini (freshness) ve kapanma durumunu analiz eden katmandır.
+
+#### Mimari Akış
+
+```text
+Gmail / Outlook
+       ↓
+Job Alert mail
+       ↓
+Mail parser (temel ilan bilgisi + LinkedIn URL)
+       ↓
+Tarih / Freshness analizi
+       ↓
+Açıklama yeterli mi? (kelime sayısı ≥ 120 veya ok)
+       ├── EVET ───────────────→ Scoring Pipeline
+       └── HAYIR
+             ↓
+      Web Discovery (SearXNG)
+             ↓
+      Resmi / ATS Aday Sayfası
+             ↓
+      SafeWebFetcher (SSRF korumalı, anti-scraping kurallı)
+             ↓
+      HTML & JSON-LD (schema.org/JobPosting) Ayrıştırıcı
+             ↓
+      Eşleşme & Güven Doğrulaması (Trust & Confidence)
+             ↓
+      İlan Zenginleştirme (Tam metin, başvuru linki, tarih)
+             ↓
+      Scoring Pipeline (Tazelik filtresi: süresi dolanlar elenir)
+             ↓
+      Telegram Bildirimi
+```
+
+#### Temel Güvenlik ve Tasarım İlkeleri
+
+1. **KESİNLİKLE LinkedIn Scrape Edilmez:**
+   - LinkedIn sayfalarına HTTP isteği atılmaz; anti-bot/Selenium/Playwright kullanılmaz.
+   - `SafeWebFetcher` tüm `*.linkedin.com` ve alt alan adlarını `LinkedInFetchForbiddenError` ile istisnasız engeller.
+   - LinkedIn URL'leri yalnızca kullanıcının tıklayıp tarayıcısında açması için saklanır (`target="_blank" rel="noopener noreferrer"`).
+2. **SSRF Koruması (SafeWebFetcher):**
+   - Yalnızca `http://` ve `https://` şemaları kabul edilir.
+   - Yerel, döngüsel (loopback), özel ağ, link-local ve bulut metadata adresleri (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.169.254`, `::1`, `fc00::/7` vb.) DNS çözümlemesi seviyesinde engellenir.
+   - Yönlendirmeler (HTTP 3xx) kütüphane seviyesinde değil, her sekme (hop) tek tek SSRF denetiminden geçirilerek manuel takip edilir (en fazla 5 yönlendirme).
+   - Akış (stream) boyutu en fazla 2 MB ile sınırlıdır (Memory exhaust / DoS engelleme).
+   - Zaman aşımı 15 saniyedir.
+3. **Resmi ATS ve Kaynak Sınıflandırması:**
+   - Greenhouse, Lever, Workday, SmartRecruiters, Ashby, Teamtailor vb. ATS sistemleri otomatik olarak tespit edilir ve en yüksek güven puanını alır (9/10).
+   - Şirketin kendi alan adı kariyer sayfası yüksek güven alır (8/10).
+   - Üçüncü taraf portallar orta/düşük güven seviyesinde değerlendirilir.
+4. **Tarih Hiyerarşisi ve Tazelik Analizi:**
+   - `effective_posted_at` şu öncelikle belirlenir:
+     1. JSON-LD `datePosted` (en yüksek güven - `high`)
+     2. HTML meta etiketleri (`article:published_time` vb.) (`medium`)
+     3. E-posta bildirim tarihi (`low`)
+     4. Keşfedilme zamanı (`fallback`)
+   - Geleceğe dönük hatalı tarihler `discovered_at` değerine kırpılır.
+   - Tazelik kategorileri:
+     - `fresh`: 0–3 gün (Yeşil rozet)
+     - `aging`: 4–7 gün (Sarı/Amber rozet)
+     - `stale`: 8–14 gün (Turuncu rozet)
+     - `expired`: >14 gün veya ilanın kapandığı saptandı (Kırmızı rozet)
+   - Süresi dolmuş (`expired`) ilanlar otomatik LLM skorlamasına girmez (`mode == "new"`).
+5. **Durable Worker & Pipeline Entegrasyonu:**
+   - Zenginleştirme süreci birinci sınıf bir `SyncJob` evresi (`kind == "enrichment"`, `enrichment_items` tablosu) olarak tasarlanmıştır.
+   - Crash durumunda kirası dolan işler otomatik kurtarılır, bounded retry sınırına ulaştığında başarısız olarak işaretlenir.
+   - Ağ araması ve sayfa indirme sırasında veritabanı oturumu açık tutulmaz.
+6. **API ve Arayüz:**
+   - `POST /api/v1/jobs/{job_id}/refresh`: İlanı SearXNG ve web keşfi ile yeniden tazeleyen endpoint (202 Accepted).
+   - İlan listesinde ve detay sayfasında `[LinkedIn'de Aç]` ve `[Resmi İlan / Başvuru Sayfası]` doğrudan dış bağlantıları (`noopener noreferrer`).
+   - Detay sayfasında keşfedilen kaynakların listesini, güven puanını, eşleşme oranını ve kanonik işaretini gösteren **Web Kaynakları (Provenance)** kartı.
+   - İlan listesinde tazelik durumu filtresi (`fresh`, `aging`, `stale`, `expired`).
 
 ### Aşama 3'te yapılmayanlar (bilinçli)
 

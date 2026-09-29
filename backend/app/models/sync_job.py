@@ -189,6 +189,46 @@ class ScoringItem(UUIDPrimaryKeyMixin, Base):
     job: Mapped["Job"] = relationship()  # noqa: F821
 
 
+class EnrichmentItem(UUIDPrimaryKeyMixin, Base):
+    """One job enrichment unit inside an enrichment SyncJob."""
+
+    __tablename__ = "enrichment_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "sync_job_id", "job_id", name="uq_enrichment_items_job_entry"
+        ),
+        Index("ix_enrichment_items_user_status", "user_id", "status"),
+    )
+
+    sync_job_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("sync_jobs.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20), default="queued", server_default="queued"
+    )
+    attempt: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    source_type: Mapped[str | None] = mapped_column(String(30), default=None)
+    source_url: Mapped[str | None] = mapped_column(Text, default=None)
+    error_class: Mapped[str | None] = mapped_column(String(50), default=None)
+    error_message: Mapped[str | None] = mapped_column(Text, default=None)
+
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
+    job: Mapped["Job"] = relationship()  # noqa: F821
+
+
 class SyncCheckpoint(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Incremental cursor for one mailbox (Gmail historyId / Graph delta link).
 

@@ -14,6 +14,7 @@ from app.schemas.job import (
     JobRead,
     JobStats,
     ReanalyzeResponse,
+    RefreshJobResponse,
 )
 from app.services.job_service import JobService
 from app.services.scoring_service import MODE_NEW, MODE_REANALYZE, ScoringService
@@ -36,6 +37,8 @@ def list_jobs(
     max_score: int | None = Query(default=None, ge=0, le=100),
     analysis_status: str | None = Query(default=None, max_length=20),
     notification: str | None = Query(default=None, pattern="^(sent|pending)$"),
+    freshness_status: str | None = Query(default=None, max_length=20),
+    enrichment_status: str | None = Query(default=None, max_length=20),
     sort: str = Query(default="recent"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -52,6 +55,8 @@ def list_jobs(
         max_score=max_score,
         analysis_status=analysis_status,
         notification=notification,
+        freshness_status=freshness_status,
+        enrichment_status=enrichment_status,
         sort=sort,
         page=page,
         page_size=page_size,
@@ -122,6 +127,32 @@ def reanalyze_single_job(
         total=total,
         status=job.status,
         message="İlan yeniden analiz kuyruğuna alındı.",
+    )
+
+
+@router.post(
+    "/{job_id}/refresh",
+    response_model=RefreshJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def refresh_single_job(
+    job_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> RefreshJobResponse:
+    """Trigger on-demand web discovery and enrichment refresh for a single job posting."""
+    from app.services.enrichment_service import EnrichmentService
+
+    job_service = JobService(db)
+    job_service.get(user, job_id)
+    enrich_service = EnrichmentService(db)
+    sync_job, _ = enrich_service.enqueue(
+        user, job_id=job_id, force=True, trigger=SyncTrigger.MANUAL
+    )
+    db.commit()
+    return RefreshJobResponse(
+        job_id=job_id,
+        sync_job_id=sync_job.id,
+        status=sync_job.status,
+        message="İlan zenginleştirme ve tazelik kontrolü kuyruğa alındı.",
     )
 
 

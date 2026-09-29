@@ -35,7 +35,14 @@ logger = logging.getLogger("jobhunter.worker")
 
 def _check_schema() -> bool:
     tables = set(inspect(engine).get_table_names())
-    required = {"sync_jobs", "scoring_items", "cv_profiles", "telegram_integrations"}
+    required = {
+        "sync_jobs",
+        "scoring_items",
+        "cv_profiles",
+        "telegram_integrations",
+        "job_web_sources",
+        "enrichment_items",
+    }
     missing = required - tables
     if missing:
         print(

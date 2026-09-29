@@ -134,6 +134,30 @@ class Settings(BaseSettings):
     scheduler_max_interval_hours: int = 168
     scheduler_jitter_seconds: int = 30
 
+    # --- Phase 4: Job Discovery, Enrichment & Freshness -------------------
+    web_search_provider: str = "searxng"  # searxng | mock | none
+    web_search_searxng_url: str = "http://localhost:8080"
+    web_search_searxng_secret_key: str | None = None
+    web_search_max_concurrency: int = 2
+    web_search_max_queries_per_job: int = 4
+    web_search_max_results_per_query: int = 5
+    web_search_timeout_seconds: float = 10.0
+
+    web_fetch_max_concurrency: int = 4
+    web_fetch_timeout_seconds: float = 15.0
+    web_fetch_max_bytes: int = 2 * 1024 * 1024  # 2MB
+    web_fetch_max_redirects: int = 5
+    web_fetch_user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 (JobHunter/1.0)"
+    )
+
+    job_fresh_days: int = 3
+    job_aging_days: int = 7
+    job_stale_days: int = 14
+    job_max_age_days: int = 14  # Cut-off for automatic LLM scoring
+    job_enrichment_min_words: int = 40  # Description < 40 words considered short/inadequate
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

@@ -14,6 +14,7 @@ from app.models.enums import (
     SyncTrigger,
 )
 from app.models.sync_job import (
+    EnrichmentItem,
     JobSource,
     ProcessedMessage,
     ScoringItem,
@@ -463,6 +464,97 @@ class ScoringItemRepository(Repository[ScoringItem]):
             .where(
                 ScoringItem.sync_job_id == job_id,
                 ScoringItem.status == "running",
+            )
+            .values(status="queued")
+        )
+        self.db.flush()
+        return int(result.rowcount or 0)
+
+
+class EnrichmentItemRepository(Repository[EnrichmentItem]):
+    model = EnrichmentItem
+
+    def list_for_job(self, job_id: uuid.UUID) -> list[EnrichmentItem]:
+        stmt = (
+            select(EnrichmentItem)
+            .where(EnrichmentItem.sync_job_id == job_id)
+            .order_by(EnrichmentItem.id)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def create_items(
+        self, job: SyncJob, job_ids: list[uuid.UUID]
+    ) -> list[EnrichmentItem]:
+        existing = {item.job_id for item in self.list_for_job(job.id)}
+        for job_id in job_ids:
+            if job_id in existing:
+                continue
+            self.db.add(
+                EnrichmentItem(
+                    sync_job_id=job.id,
+                    user_id=job.user_id,
+                    job_id=job_id,
+                    status="queued",
+                )
+            )
+        self.db.flush()
+        return self.list_for_job(job.id)
+
+    def claim(self, item: EnrichmentItem) -> bool:
+        """queued -> running, atomically; False when somebody else took it."""
+        result = self.db.execute(
+            update(EnrichmentItem)
+            .where(
+                EnrichmentItem.id == item.id,
+                EnrichmentItem.status.in_(["queued", "retryable"]),
+            )
+            .values(
+                status="running",
+                attempt=EnrichmentItem.attempt + 1,
+                started_at=func.now(),
+            )
+        )
+        self.db.flush()
+        if result.rowcount:
+            self.db.refresh(item)
+            return True
+        return False
+
+    def mark_finished(
+        self,
+        item: EnrichmentItem,
+        *,
+        status: str,
+        source_type: str | None = None,
+        source_url: str | None = None,
+        error_class: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        item.status = status
+        item.source_type = source_type or item.source_type
+        item.source_url = source_url or item.source_url
+        item.error_class = error_class
+        item.error_message = (error_message or None) and error_message[:400]
+        item.finished_at = _now()
+        self.db.flush()
+
+    def pending_for_job(self, job_id: uuid.UUID) -> list[EnrichmentItem]:
+        stmt = (
+            select(EnrichmentItem)
+            .where(
+                EnrichmentItem.sync_job_id == job_id,
+                EnrichmentItem.status.in_(["queued", "retryable"]),
+            )
+            .order_by(EnrichmentItem.id)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def requeue_running(self, job_id: uuid.UUID) -> int:
+        result = self.db.execute(
+            update(EnrichmentItem)
+            .where(
+                EnrichmentItem.sync_job_id == job_id,
+                EnrichmentItem.status == "running",
             )
             .values(status="queued")
         )

@@ -8,6 +8,8 @@ from app.integrations.web_search.base import SearchResult
 class MockSearchProvider:
     """Mock search provider returning pre-configured or deterministic test results."""
 
+    available: bool = True
+
     def __init__(self, canned_results: dict[str, list[SearchResult]] | None = None) -> None:
         self.canned_results = canned_results or {}
         self.queries_executed: list[str] = []
@@ -22,3 +24,8 @@ class MockSearchProvider:
             if key in q_lower:
                 return results[:limit]
         return []
+
+    async def close(self) -> None:
+        """No-op cleanup."""
+        pass
+

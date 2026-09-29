@@ -99,6 +99,7 @@ class NotificationService:
                 JobMatch.score.is_not(None),
                 JobMatch.score >= preference.min_match_score,
                 JobMatch.analysis_status == "completed",
+                Job.availability_status.not_in(["expired", "removed", "possibly_closed", "closed"]),
             )
             .order_by(JobMatch.score.desc())
             .limit(max(1, limit))

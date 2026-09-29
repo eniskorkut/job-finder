@@ -1,0 +1,7 @@
+name: job-finder-acceptance
+
+services:
+  backend-worker:
+    environment:
+      - ENVIRONMENT=test
+      - ENABLE_ACCEPTANCE_TEST_HOOKS=true

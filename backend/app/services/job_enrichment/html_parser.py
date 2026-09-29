@@ -33,6 +33,8 @@ class ExtractedJobData:
     valid_through: datetime | None = None
     location: str | None = None
     employment_type: str | None = None
+    work_mode: str | None = None
+    application_url: str | None = None
     source_type: str = "none"  # "json_ld" | "semantic_html" | "none"
     is_closed: bool = False
     raw_json_ld: dict | None = None
@@ -111,11 +113,18 @@ def _find_job_postings_in_json(obj: Any) -> list[dict]:
     return found
 
 
-def extract_from_json_ld(html: str) -> ExtractedJobData | None:
-    """Extract JobPosting structured data from application/ld+json scripts."""
+def extract_from_json_ld(
+    html: str,
+    expected_title: str | None = None,
+    expected_company: str | None = None,
+) -> ExtractedJobData | None:
+    """Extract JobPosting structured data from application/ld+json scripts.
+    If multiple JobPostings are found, selects the best matching posting.
+    """
     soup = BeautifulSoup(html, "html.parser")
     scripts = soup.find_all("script", type=lambda t: t and "ld+json" in t.lower())
 
+    all_postings: list[dict] = []
     for script in scripts:
         raw_text = script.string or script.text
         if not raw_text or not raw_text.strip():
@@ -126,72 +135,123 @@ def extract_from_json_ld(html: str) -> ExtractedJobData | None:
             continue
 
         job_postings = _find_job_postings_in_json(data)
-        if not job_postings:
-            continue
+        all_postings.extend(job_postings)
 
-        # Use the first valid JobPosting
-        jp = job_postings[0]
+    if not all_postings:
+        return None
 
-        title = jp.get("title") or jp.get("name")
-        raw_desc = jp.get("description")
-        cleaned_desc = clean_html_content(raw_desc) if raw_desc else None
+    # If multiple postings, rank by title & company similarity
+    if len(all_postings) > 1 and (expected_title or expected_company):
+        def _score_jp(jp: dict) -> float:
+            score = 0.0
+            t = (jp.get("title") or jp.get("name") or "").lower()
+            org = jp.get("hiringOrganization")
+            c = ""
+            if isinstance(org, dict):
+                c = (org.get("name") or "").lower()
+            elif isinstance(org, str):
+                c = org.lower()
 
-        date_posted = parse_iso_datetime(jp.get("datePosted"))
-        valid_through = parse_iso_datetime(jp.get("validThrough"))
+            if expected_title:
+                et = expected_title.lower()
+                if et in t or t in et:
+                    score += 2.0
+                else:
+                    t_toks = set(re.findall(r"\w+", t))
+                    et_toks = set(re.findall(r"\w+", et))
+                    if t_toks and et_toks:
+                        score += (len(t_toks & et_toks) / len(et_toks)) * 2.0
 
-        # Company
-        company = None
-        org = jp.get("hiringOrganization")
-        if isinstance(org, dict):
-            company = org.get("name")
-        elif isinstance(org, str):
-            company = org
+            if expected_company:
+                ec = expected_company.lower()
+                if ec in c or c in ec:
+                    score += 1.5
 
-        # Location
-        location = None
-        job_loc = jp.get("jobLocation")
-        if isinstance(job_loc, dict):
-            addr = job_loc.get("address")
+            desc = jp.get("description") or ""
+            if len(desc) > 100:
+                score += 0.5
+            return score
+
+        all_postings.sort(key=_score_jp, reverse=True)
+
+    jp = all_postings[0]
+
+    title = jp.get("title") or jp.get("name")
+    raw_desc = jp.get("description")
+    cleaned_desc = clean_html_content(raw_desc) if raw_desc else None
+
+    date_posted = parse_iso_datetime(jp.get("datePosted"))
+    valid_through = parse_iso_datetime(jp.get("validThrough"))
+
+    # Company
+    company = None
+    org = jp.get("hiringOrganization")
+    if isinstance(org, dict):
+        company = org.get("name")
+    elif isinstance(org, str):
+        company = org
+
+    # Location
+    location = None
+    job_loc = jp.get("jobLocation")
+    if isinstance(job_loc, dict):
+        addr = job_loc.get("address")
+        if isinstance(addr, dict):
+            loc_parts = [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]
+            location = ", ".join(p for p in loc_parts if p)
+        elif isinstance(addr, str):
+            location = addr
+    elif isinstance(job_loc, list) and job_loc:
+        first_loc = job_loc[0]
+        if isinstance(first_loc, dict):
+            addr = first_loc.get("address")
             if isinstance(addr, dict):
                 loc_parts = [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]
                 location = ", ".join(p for p in loc_parts if p)
-            elif isinstance(addr, str):
-                location = addr
-        elif isinstance(job_loc, list) and job_loc:
-            first_loc = job_loc[0]
-            if isinstance(first_loc, dict):
-                addr = first_loc.get("address")
-                if isinstance(addr, dict):
-                    loc_parts = [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]
-                    location = ", ".join(p for p in loc_parts if p)
 
-        # Employment type
-        emp_type = jp.get("employmentType")
-        if isinstance(emp_type, list):
-            emp_type = ", ".join(str(e) for e in emp_type)
-        elif not isinstance(emp_type, str):
-            emp_type = None
+    # Employment type
+    emp_type = jp.get("employmentType")
+    if isinstance(emp_type, list):
+        emp_type = ", ".join(str(e) for e in emp_type)
+    elif not isinstance(emp_type, str):
+        emp_type = None
 
-        is_closed = False
-        if valid_through and valid_through < datetime.now(timezone.utc):
-            is_closed = True
-        elif check_is_closed(cleaned_desc):
-            is_closed = True
+    # Work mode
+    work_mode = None
+    loc_type = jp.get("jobLocationType")
+    if loc_type and "telecommute" in str(loc_type).lower():
+        work_mode = "remote"
+    elif jp.get("applicantLocationRequirements"):
+        work_mode = "remote"
+    elif cleaned_desc and any(w in cleaned_desc.lower()[:300] for w in ["100% remote", "fully remote", "tamamen uzaktan"]):
+        work_mode = "remote"
 
-        return ExtractedJobData(
-            title=title.strip() if title else None,
-            company=company.strip() if company else None,
-            description=cleaned_desc,
-            date_posted=date_posted,
-            valid_through=valid_through,
-            location=location,
-            employment_type=emp_type,
-            source_type="json_ld",
-            is_closed=is_closed,
-            raw_json_ld=jp,
-        )
+    # Application / Direct Apply URL
+    application_url = None
+    app_url = jp.get("directApply") or jp.get("url")
+    if isinstance(app_url, str) and app_url.startswith("http"):
+        application_url = app_url.strip()
 
-    return None
+    is_closed = False
+    if valid_through and valid_through < datetime.now(timezone.utc):
+        is_closed = True
+    elif check_is_closed(cleaned_desc):
+        is_closed = True
+
+    return ExtractedJobData(
+        title=title.strip() if title else None,
+        company=company.strip() if company else None,
+        description=cleaned_desc,
+        date_posted=date_posted,
+        valid_through=valid_through,
+        location=location,
+        employment_type=emp_type,
+        work_mode=work_mode,
+        application_url=application_url,
+        source_type="json_ld",
+        is_closed=is_closed,
+        raw_json_ld=jp,
+    )
 
 
 def extract_from_semantic_html(html: str) -> ExtractedJobData | None:
@@ -247,6 +307,12 @@ def extract_from_semantic_html(html: str) -> ExtractedJobData | None:
 
     is_closed = check_is_closed(cleaned_desc) or check_is_closed(soup.get_text())
 
+    # Remote detection
+    work_mode = None
+    full_text = ((title or "") + " " + (cleaned_desc or "")).lower()
+    if any(k in full_text[:400] for k in ["remote", "uzaktan", "telecommute", "work from home"]):
+        work_mode = "remote"
+
     if not title and not cleaned_desc:
         return None
 
@@ -258,18 +324,28 @@ def extract_from_semantic_html(html: str) -> ExtractedJobData | None:
         valid_through=None,
         location=None,
         employment_type=None,
+        work_mode=work_mode,
+        application_url=None,
         source_type="semantic_html",
         is_closed=is_closed,
         raw_json_ld=None,
     )
 
 
-def extract_job_posting(html: str) -> ExtractedJobData | None:
+def extract_job_posting(
+    html: str,
+    expected_title: str | None = None,
+    expected_company: str | None = None,
+) -> ExtractedJobData | None:
     """Main entrypoint: attempt JSON-LD first, fallback to semantic HTML."""
     if not html or not html.strip():
         return None
     try:
-        json_ld_data = extract_from_json_ld(html)
+        json_ld_data = extract_from_json_ld(
+            html,
+            expected_title=expected_title,
+            expected_company=expected_company,
+        )
         if json_ld_data and json_ld_data.description and len(json_ld_data.description) >= 60:
             return json_ld_data
     except Exception as exc:

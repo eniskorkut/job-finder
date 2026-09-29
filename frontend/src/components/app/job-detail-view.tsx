@@ -37,6 +37,7 @@ import {
   enrichmentLabels,
   enrichmentVariants,
   sourceTypeLabels,
+  safeExternalUrl,
 } from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
 import type {
@@ -284,32 +285,39 @@ export function JobDetailView({ jobId }: { jobId: string }) {
             </div>
 
             {/* Prominent external link action buttons */}
-            {(data.linkedin_url || data.canonical_url || data.application_url || data.company_job_url) ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                {data.linkedin_url ? (
-                  <a
-                    href={data.linkedin_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonStyles({ variant: "secondary", size: "sm" })}
-                  >
-                    LinkedIn&apos;de Aç
-                    <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />
-                  </a>
-                ) : null}
-                {(data.canonical_url || data.application_url || data.company_job_url) ? (
-                  <a
-                    href={data.canonical_url || data.application_url || data.company_job_url!}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonStyles({ size: "sm" })}
-                  >
-                    Resmi İlan / Başvuru Sayfası
-                    <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />
-                  </a>
-                ) : null}
-              </div>
-            ) : null}
+            {(() => {
+              const safeLi = safeExternalUrl(data.linkedin_url);
+              const safeApp = safeExternalUrl(
+                data.canonical_url || data.application_url || data.company_job_url,
+              );
+              if (!safeLi && !safeApp) return null;
+              return (
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                  {safeLi ? (
+                    <a
+                      href={safeLi}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={buttonStyles({ variant: "secondary", size: "sm" })}
+                    >
+                      LinkedIn&apos;de Aç
+                      <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />
+                    </a>
+                  ) : null}
+                  {safeApp ? (
+                    <a
+                      href={safeApp}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={buttonStyles({ size: "sm" })}
+                    >
+                      Resmi İlan / Başvuru Sayfası
+                      <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />
+                    </a>
+                  ) : null}
+                </div>
+              );
+            })()}
 
             {data.salary_text ? (
               <p className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink">
@@ -327,24 +335,28 @@ export function JobDetailView({ jobId }: { jobId: string }) {
               </p>
             </div>
 
-            {data.url ? (
-              <div className="mt-5 border-t border-line pt-4">
-                <a
-                  href={data.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-ink underline-offset-4 pointer-hover:underline"
-                >
-                  İlan kaynağını aç
-                  <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />
-                </a>
-                {data.is_mock ? (
-                  <p className="mt-1 text-[11.5px] text-ink-subtle">
-                    Örnek veri olduğu için bu bağlantı gerçek bir ilana gitmez.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+            {(() => {
+              const safeSourceUrl = safeExternalUrl(data.url);
+              if (!safeSourceUrl) return null;
+              return (
+                <div className="mt-5 border-t border-line pt-4">
+                  <a
+                    href={safeSourceUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-ink underline-offset-4 pointer-hover:underline"
+                  >
+                    İlan kaynağını aç
+                    <ExternalLink aria-hidden className="size-3.5" strokeWidth={2} />
+                  </a>
+                  {data.is_mock ? (
+                    <p className="mt-1 text-[11.5px] text-ink-subtle">
+                      Örnek veri olduğu için bu bağlantı gerçek bir ilana gitmez.
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })()}
           </Card>
 
           {/* Web Sources Provenance Section */}
@@ -410,15 +422,21 @@ export function JobDetailView({ jobId }: { jobId: string }) {
                       <span className="text-[11.5px] text-ink-subtle">
                         Keşif: {formatDateTime(source.discovered_at)}
                       </span>
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
-                      >
-                        Kaynağa Git
-                        <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
-                      </a>
+                      {(() => {
+                        const safeSrc = safeExternalUrl(source.url);
+                        if (!safeSrc) return null;
+                        return (
+                          <a
+                            href={safeSrc}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
+                          >
+                            Kaynağa Git
+                            <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
+                          </a>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}

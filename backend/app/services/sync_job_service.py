@@ -279,18 +279,26 @@ class SyncRunner:
                 payload = (job.payload if job else None) or {}
                 attempt = job.attempt if job else 1
 
-            # Test provider / barrier hook for controlled acceptance testing
-            test_delay = payload.get("test_delay_seconds") or settings.test_job_delay_seconds
-            test_barrier = payload.get("test_barrier") or settings.test_barrier_file
+            # Test provider / barrier hook for controlled acceptance testing (strictly gated)
+            if settings.is_test_hook_allowed():
+                test_delay = payload.get("test_delay_seconds") or settings.test_job_delay_seconds
+                test_barrier = payload.get("test_barrier") or settings.test_barrier_file
 
-            if self._execution_hook is not None:
+                if self._execution_hook is not None:
+                    await self._execution_hook(job_id, attempt)
+                elif test_barrier and attempt == 1:
+                    safe_barrier = Path(test_barrier).name
+                    barrier_path = (Path(settings.data_dir) / safe_barrier).resolve()
+                    base_dir = Path(settings.data_dir).resolve()
+                    if barrier_path.is_relative_to(base_dir):
+                        while barrier_path.exists():
+                            await asyncio.sleep(0.5)
+                elif test_delay and attempt == 1:
+                    capped_delay = min(30.0, max(0.0, float(test_delay)))
+                    if capped_delay > 0:
+                        await asyncio.sleep(capped_delay)
+            elif self._execution_hook is not None and (settings.environment or "").lower() in {"test", "development"}:
                 await self._execution_hook(job_id, attempt)
-            elif test_barrier and attempt == 1:
-                barrier_path = Path(settings.data_dir) / test_barrier
-                while barrier_path.exists():
-                    await asyncio.sleep(0.5)
-            elif test_delay > 0 and attempt == 1:
-                await asyncio.sleep(test_delay)
 
             if kind == "enrichment":
                 status = await self._execute_enrichment(job_id)

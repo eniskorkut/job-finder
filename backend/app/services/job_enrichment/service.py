@@ -1,13 +1,11 @@
-"""Job enrichment orchestration service."""
+"""Job enrichment orchestration service (decoupled architecture)."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -18,16 +16,22 @@ from app.integrations.web_fetch.fetcher import (
     SafeWebFetcher,
     WebFetchError,
 )
-from app.integrations.web_search.base import SearchProvider, SearchResult
 from app.integrations.web_search import get_search_provider
-from app.models.job import Job
+from app.integrations.web_search.base import SearchProvider, SearchResult, SearchUnavailableError
+from app.models.job import Job, JobMatch
 from app.repositories.jobs import JobRepository, JobWebSourceRepository
+from app.services.job_enrichment.dtos import (
+    DiscoveredWebSourceDTO,
+    EnrichmentCandidate,
+    JobEnrichmentOutcome,
+    JobEnrichmentResult,
+    JobEnrichmentSnapshot,
+)
 from app.services.job_enrichment.freshness import calculate_freshness, evaluate_posted_at
 from app.services.job_enrichment.html_parser import ExtractedJobData, extract_job_posting
 from app.services.job_enrichment.trust import (
     calculate_match_confidence,
     classify_source,
-    compute_string_similarity,
 )
 from app.services.job_enrichment.url_utils import (
     compute_content_hash,
@@ -40,31 +44,534 @@ from app.services.job_enrichment.url_utils import (
 logger = logging.getLogger("jobhunter.enrichment")
 
 
-@dataclass(slots=True)
-class EnrichmentCandidate:
-    url: str
-    normalized_url: str
-    host: str
-    source_type: str
-    trust_level: int
-    match_confidence: str
-    title: str | None
-    extracted_data: ExtractedJobData | None
-    http_status: int | None
-    content_hash: str | None
+def is_enrichment_needed(
+    snapshot: JobEnrichmentSnapshot,
+    *,
+    force: bool = False,
+    now: datetime | None = None,
+) -> bool:
+    """Decide if a job needs web discovery & enrichment based on TTL, content quality, and status."""
+    if force:
+        return True
+
+    current_time = now or datetime.now(timezone.utc)
+
+    # 1. Enriched TTL check (default 24 hours)
+    if snapshot.enrichment_status == "enriched" and snapshot.last_enriched_at:
+        last = snapshot.last_enriched_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if current_time - last < timedelta(hours=settings.job_enrichment_ttl_hours):
+            return False
+        return True
+
+    # 2. Not found TTL check (12 hours)
+    if snapshot.enrichment_status == "not_found" and snapshot.last_enriched_at:
+        last = snapshot.last_enriched_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if current_time - last < timedelta(hours=12):
+            return False
+        return True
+
+    # 3. Failed / error TTL check (1 hour)
+    if snapshot.enrichment_status == "failed" and snapshot.last_enriched_at:
+        last = snapshot.last_enriched_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if current_time - last < timedelta(hours=1):
+            return False
+        return True
+
+    # 4. Content quality check
+    desc = snapshot.description or ""
+    word_count = len(desc.split())
+    is_short = word_count < settings.job_enrichment_min_words
+    is_insufficient = snapshot.description_status == "insufficient_description"
+    no_canonical = not (snapshot.canonical_url or snapshot.company_job_url)
+
+    if snapshot.enrichment_status == "pending":
+        return True
+    return (is_short or is_insufficient) and no_canonical
 
 
-@dataclass(slots=True)
-class JobEnrichmentOutcome:
-    job_id: uuid.UUID
-    status: str  # "completed", "failed", "skipped"
-    enrichment_status: str  # "enriched", "skipped", "not_found", "failed"
-    freshness_status: str
-    availability_status: str
-    canonical_url: str | None = None
-    description_updated: bool = False
-    error_class: str | None = None
-    error_message: str | None = None
+async def execute_enrichment_flow(
+    snapshot: JobEnrichmentSnapshot,
+    search_provider: SearchProvider,
+    fetcher: SafeWebFetcher,
+    *,
+    force: bool = False,
+    now: datetime | None = None,
+) -> JobEnrichmentResult:
+    """Pure async network flow: web discovery, page fetching, and ranking.
+    Runs completely detached with ZERO database calls or locks.
+    """
+    current_time = now or datetime.now(timezone.utc)
+    job_id = snapshot.job_id
+    title = snapshot.title
+    company = snapshot.company
+    existing_desc = snapshot.description or ""
+    email_received_at = snapshot.email_received_at
+    discovered_at = snapshot.discovered_at
+    existing_linkedin = snapshot.linkedin_url
+
+    needs_enrichment = force or is_enrichment_needed(snapshot, force=force, now=current_time)
+
+    # If already adequate and not forced, re-evaluate freshness only
+    if not needs_enrichment:
+        date_eval = evaluate_posted_at(
+            email_received_at=email_received_at,
+            discovered_at=discovered_at,
+            now=current_time,
+        )
+        freshness_res = calculate_freshness(
+            effective_posted_at=snapshot.posted_at or date_eval.effective_posted_at,
+            valid_through=snapshot.valid_through,
+            availability_status=snapshot.availability_status,
+            now=current_time,
+        )
+        return JobEnrichmentResult(
+            job_id=job_id,
+            status="completed",
+            enrichment_status="skipped" if snapshot.enrichment_status == "pending" else snapshot.enrichment_status,
+            freshness_status=freshness_res.freshness_status,
+            availability_status=freshness_res.availability_status,
+            canonical_url=snapshot.canonical_url,
+            company_job_url=snapshot.company_job_url,
+            application_url=snapshot.application_url,
+            linkedin_url=snapshot.linkedin_url,
+            posted_at=snapshot.posted_at or date_eval.effective_posted_at,
+            posted_at_source=snapshot.posted_at_source or date_eval.posted_at_source,
+            posted_at_confidence=snapshot.posted_at_confidence or date_eval.posted_at_confidence,
+            valid_through=snapshot.valid_through,
+            description_updated=False,
+            last_verified_at=current_time,
+            last_enriched_at=snapshot.last_enriched_at,
+        )
+
+    # Step 1: Search for official / ATS postings
+    queries = [
+        f'"{company}" "{title}" careers job',
+        f'"{title}" "{company}" hiring',
+        f'site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com "{company}" "{title}"',
+        f'"{company}" "{title}" apply',
+    ]
+    # If job has no LinkedIn URL, add a search to discover one
+    if not existing_linkedin:
+        queries.append(f'site:linkedin.com/jobs/view "{company}" "{title}"')
+
+    queries = queries[: settings.web_search_max_queries_per_job]
+
+    search_results: list[SearchResult] = []
+    search_unavailable_count = 0
+
+    for q in queries:
+        try:
+            results = await search_provider.search(
+                q, limit=settings.web_search_max_results_per_query
+            )
+            search_results.extend(results)
+        except SearchUnavailableError as exc:
+            search_unavailable_count += 1
+            logger.warning("Arama sağlayıcısı yanıt vermedi (%s): %s", q, exc)
+        except Exception as exc:
+            logger.warning("Arama sorgusu başarısız (%s): %s", q, exc)
+
+    # Deduplicate search results by normalized URL
+    seen_urls: set[str] = set()
+    candidate_urls: list[str] = []
+    discovered_linkedin_url: str | None = None
+
+    for res in search_results:
+        norm = normalize_url(res.url)
+        if not norm:
+            continue
+
+        # If search returns a LinkedIn URL, save it as navigation link ONLY (never fetch!)
+        if is_linkedin_url(norm):
+            if not discovered_linkedin_url and not existing_linkedin:
+                discovered_linkedin_url = normalize_linkedin_job_url(norm)
+            continue
+
+        if norm not in seen_urls:
+            seen_urls.add(norm)
+            candidate_urls.append(res.url)
+
+    # Prioritize candidate URLs by domain trust
+    def _candidate_priority(u: str) -> int:
+        _, trust, _ = classify_source(u, company)
+        return trust
+
+    # Include pre-existing canonical or company URLs for re-verification
+    for existing_url in (snapshot.canonical_url, snapshot.company_job_url):
+        if existing_url and not is_linkedin_url(existing_url):
+            norm_ex = normalize_url(existing_url)
+            if norm_ex and norm_ex not in seen_urls:
+                seen_urls.add(norm_ex)
+                candidate_urls.append(existing_url)
+
+    candidate_urls.sort(key=_candidate_priority, reverse=True)
+    candidate_urls = candidate_urls[:5]
+
+    # Step 2: Fetch candidate pages
+    candidates: list[EnrichmentCandidate] = []
+
+    async def _fetch_candidate(c_url: str) -> EnrichmentCandidate | None:
+        norm_c = normalize_url(c_url) or c_url
+        host = extract_domain(c_url) or "unknown"
+        source_type, trust, _ = classify_source(c_url, company)
+
+        try:
+            fetch_res = await fetcher.fetch(c_url)
+            if fetch_res.status_code in {404, 410}:
+                return EnrichmentCandidate(
+                    url=c_url,
+                    normalized_url=norm_c,
+                    host=host,
+                    source_type=source_type,
+                    trust_level=trust,
+                    match_confidence="none",
+                    title=None,
+                    extracted_data=None,
+                    http_status=fetch_res.status_code,
+                    content_hash=None,
+                    etag=fetch_res.etag,
+                    last_modified=fetch_res.last_modified,
+                )
+
+            extracted = extract_job_posting(
+                fetch_res.content,
+                expected_title=title,
+                expected_company=company,
+            )
+            if not extracted:
+                return None
+
+            match_conf = calculate_match_confidence(
+                title,
+                extracted.title,
+                company,
+                extracted.company,
+                source_type=source_type,
+            )
+            c_hash = compute_content_hash(extracted.description)
+
+            return EnrichmentCandidate(
+                url=c_url,
+                normalized_url=norm_c,
+                host=host,
+                source_type=source_type,
+                trust_level=trust,
+                match_confidence=match_conf,
+                title=extracted.title,
+                extracted_data=extracted,
+                http_status=fetch_res.status_code,
+                content_hash=c_hash,
+                etag=fetch_res.etag,
+                last_modified=fetch_res.last_modified,
+            )
+        except LinkedInFetchForbiddenError:
+            return None
+        except WebFetchError as exc:
+            logger.debug("Aday sayfa çekilemedi (%s): %s", c_url, exc)
+            return None
+        except Exception as exc:
+            logger.debug("Beklenmeyen sayfa işleme hatası (%s): %s", c_url, exc)
+            return None
+
+    if candidate_urls:
+        fetched_results = await asyncio.gather(*(_fetch_candidate(u) for u in candidate_urls))
+        candidates = [c for c in fetched_results if c is not None]
+
+    # Convert candidates to DiscoveredWebSourceDTO for provenance
+    best_candidate_url: str | None = None
+    discovered_sources: list[DiscoveredWebSourceDTO] = []
+
+    # Step 3: Pick best canonical candidate
+    valid_candidates = [
+        c
+        for c in candidates
+        if c.extracted_data and c.match_confidence in {"high", "medium"} and c.extracted_data.description
+    ]
+
+    def _rank_key(c: EnrichmentCandidate) -> tuple[int, int, int]:
+        conf_score = 2 if c.match_confidence == "high" else 1
+        desc_len = len(c.extracted_data.description or "") if c.extracted_data else 0
+        return (c.trust_level, conf_score, desc_len)
+
+    valid_candidates.sort(key=_rank_key, reverse=True)
+    best = valid_candidates[0] if valid_candidates else None
+    if best:
+        best_candidate_url = best.url
+
+    for c in candidates:
+        snippet_text = (
+            c.extracted_data.description[:300]
+            if (c.extracted_data and c.extracted_data.description)
+            else None
+        )
+        discovered_sources.append(
+            DiscoveredWebSourceDTO(
+                url=c.url,
+                normalized_url=c.normalized_url,
+                host=c.host,
+                source_type=c.source_type,
+                trust_level=c.trust_level,
+                match_confidence=c.match_confidence,
+                title=c.title,
+                snippet=snippet_text,
+                http_status=c.http_status,
+                content_hash=c.content_hash,
+                selected_as_canonical=(best is not None and c.url == best.url),
+                etag=c.etag,
+                last_modified=c.last_modified,
+            )
+        )
+
+    # Step 4: Construct result
+    if best and best.extracted_data:
+        extracted = best.extracted_data
+
+        date_eval = evaluate_posted_at(
+            json_ld_date=extracted.date_posted,
+            html_meta_date=extracted.date_posted if extracted.source_type == "semantic_html" else None,
+            email_received_at=email_received_at,
+            discovered_at=discovered_at,
+            now=current_time,
+        )
+
+        freshness_res = calculate_freshness(
+            effective_posted_at=date_eval.effective_posted_at,
+            valid_through=extracted.valid_through,
+            is_closed=extracted.is_closed,
+            now=current_time,
+        )
+
+        canonical_url = best.url
+        company_job_url = best.url if best.source_type == "official" else snapshot.company_job_url
+        application_url = (
+            extracted.application_url
+            or (best.url if best.source_type == "ats" else snapshot.application_url)
+        )
+
+        desc_updated = False
+        new_desc = None
+        new_hash = None
+        if extracted.description and len(extracted.description) > len(existing_desc):
+            desc_updated = True
+            new_desc = extracted.description
+            new_hash = best.content_hash
+
+        return JobEnrichmentResult(
+            job_id=job_id,
+            status="completed",
+            enrichment_status="enriched",
+            freshness_status=freshness_res.freshness_status,
+            availability_status=freshness_res.availability_status,
+            canonical_url=canonical_url,
+            company_job_url=company_job_url,
+            application_url=application_url,
+            linkedin_url=discovered_linkedin_url or existing_linkedin,
+            posted_at=date_eval.effective_posted_at,
+            posted_at_source=date_eval.posted_at_source,
+            posted_at_confidence=date_eval.posted_at_confidence,
+            valid_through=extracted.valid_through,
+            location=extracted.location or snapshot.location,
+            work_mode=extracted.work_mode or snapshot.work_mode,
+            employment_type=extracted.employment_type or snapshot.employment_type,
+            new_description=new_desc,
+            new_content_hash=new_hash,
+            description_updated=desc_updated,
+            discovered_sources=discovered_sources,
+            last_verified_at=current_time,
+            last_enriched_at=current_time,
+        )
+
+    # No valid candidate discovered: check 404 / 410 from official sources
+    official_410 = any(
+        c.http_status == 410 and c.source_type in {"ats", "official"} for c in candidates
+    )
+    official_404 = any(
+        c.http_status == 404 and c.source_type in {"ats", "official"} for c in candidates
+    )
+
+    avail_status = "active"
+    if official_410:
+        avail_status = "removed"
+    elif official_404:
+        avail_status = "possibly_closed"
+
+    date_eval = evaluate_posted_at(
+        email_received_at=email_received_at,
+        discovered_at=discovered_at,
+        now=current_time,
+    )
+    freshness_res = calculate_freshness(
+        effective_posted_at=snapshot.posted_at or date_eval.effective_posted_at,
+        valid_through=snapshot.valid_through,
+        availability_status=avail_status if avail_status != "active" else None,
+        now=current_time,
+    )
+
+    # Determine status: if all search queries failed due to provider outage, mark failed
+    if search_unavailable_count > 0 and search_unavailable_count == len(queries):
+        enrich_status = "failed"
+        err_class = "SearchUnavailableError"
+        err_msg = "Web arama sağlayıcısı erişilemez durumda."
+    else:
+        enrich_status = "not_found"
+        err_class = None
+        err_msg = None
+
+    return JobEnrichmentResult(
+        job_id=job_id,
+        status="completed" if enrich_status != "failed" else "failed",
+        enrichment_status=enrich_status,
+        freshness_status=freshness_res.freshness_status,
+        availability_status=freshness_res.availability_status,
+        canonical_url=snapshot.canonical_url,
+        company_job_url=snapshot.company_job_url,
+        application_url=snapshot.application_url,
+        linkedin_url=discovered_linkedin_url or existing_linkedin,
+        posted_at=snapshot.posted_at or date_eval.effective_posted_at,
+        posted_at_source=snapshot.posted_at_source or date_eval.posted_at_source,
+        posted_at_confidence=snapshot.posted_at_confidence or date_eval.posted_at_confidence,
+        valid_through=snapshot.valid_through,
+        description_updated=False,
+        discovered_sources=discovered_sources,
+        error_class=err_class,
+        error_message=err_msg,
+        last_verified_at=current_time,
+        last_enriched_at=current_time,
+    )
+
+
+def take_snapshot(session: Session, job_id: uuid.UUID) -> JobEnrichmentSnapshot | None:
+    """Read a lightweight snapshot of Job attributes from DB."""
+    job = session.get(Job, job_id)
+    if job is None:
+        return None
+    return JobEnrichmentSnapshot(
+        job_id=job.id,
+        user_id=job.user_id,
+        title=job.title,
+        company=job.company,
+        description=job.description,
+        description_status=job.description_status,
+        posted_at=job.posted_at,
+        posted_at_source=job.posted_at_source,
+        posted_at_confidence=job.posted_at_confidence,
+        valid_through=job.valid_through,
+        email_received_at=job.email_received_at,
+        discovered_at=job.discovered_at,
+        freshness_status=job.freshness_status,
+        availability_status=job.availability_status,
+        enrichment_status=job.enrichment_status,
+        content_hash=job.content_hash,
+        canonical_url=job.canonical_url,
+        company_job_url=job.company_job_url,
+        application_url=job.application_url,
+        linkedin_url=job.linkedin_url,
+        url=job.url,
+        last_enriched_at=job.last_enriched_at,
+        last_verified_at=job.last_verified_at,
+        work_mode=job.work_mode,
+        location=job.location,
+        employment_type=job.employment_type,
+    )
+
+
+def persist_result(
+    session: Session,
+    result: JobEnrichmentResult,
+    original_snapshot: JobEnrichmentSnapshot,
+) -> JobEnrichmentOutcome:
+    """Persist the enrichment result into DB with optimistic concurrency and scoring re-evaluation."""
+    job = session.get(Job, result.job_id)
+    if job is None:
+        return JobEnrichmentOutcome(
+            job_id=result.job_id,
+            status="failed",
+            enrichment_status="failed",
+            freshness_status="unknown",
+            availability_status="unknown",
+            error_class="not_found",
+            error_message="İlan bulunamadı.",
+        )
+
+    # Optimistic update of description
+    desc_updated = False
+    if result.description_updated and result.new_description:
+        if len(result.new_description) > len(job.description or ""):
+            job.description = result.new_description
+            job.description_status = "ok"
+            job.content_hash = result.new_content_hash
+            desc_updated = True
+            # Re-scoring trigger: mark match pending if content changed
+            match = session.get(JobMatch, job.id) or job.match
+            if match is not None:
+                match.analysis_status = "pending"
+
+    if result.canonical_url:
+        job.canonical_url = result.canonical_url
+    if result.company_job_url:
+        job.company_job_url = result.company_job_url
+    if result.application_url:
+        job.application_url = result.application_url
+    if result.linkedin_url and not job.linkedin_url:
+        job.linkedin_url = result.linkedin_url
+
+    if result.location and not job.location:
+        job.location = result.location
+    if result.work_mode and job.work_mode in {"unknown", None}:
+        job.work_mode = result.work_mode
+    if result.employment_type and not job.employment_type:
+        job.employment_type = result.employment_type
+
+    job.posted_at = result.posted_at or job.posted_at
+    job.posted_at_source = result.posted_at_source or job.posted_at_source
+    job.posted_at_confidence = result.posted_at_confidence or job.posted_at_confidence
+    job.valid_through = result.valid_through or job.valid_through
+    job.freshness_status = result.freshness_status
+    job.availability_status = result.availability_status
+    job.enrichment_status = result.enrichment_status
+    job.last_enriched_at = result.last_enriched_at or job.last_enriched_at
+    job.last_verified_at = result.last_verified_at or job.last_verified_at
+
+    # Upsert discovered web sources
+    web_sources_repo = JobWebSourceRepository(session)
+    for src in result.discovered_sources:
+        web_sources_repo.upsert(
+            user_id=job.user_id,
+            job_id=job.id,
+            url=src.url,
+            normalized_url=src.normalized_url,
+            host=src.host,
+            source_type=src.source_type,
+            trust_level=src.trust_level,
+            match_confidence=src.match_confidence,
+            title=src.title,
+            snippet=src.snippet,
+            http_status=src.http_status,
+            content_hash=src.content_hash,
+            selected_as_canonical=src.selected_as_canonical,
+            etag=src.etag,
+            last_modified=src.last_modified,
+        )
+
+    session.flush()
+
+    return JobEnrichmentOutcome(
+        job_id=job.id,
+        status=result.status,
+        enrichment_status=job.enrichment_status,
+        freshness_status=job.freshness_status,
+        availability_status=job.availability_status,
+        canonical_url=job.canonical_url,
+        description_updated=desc_updated,
+        error_class=result.error_class,
+        error_message=result.error_message,
+    )
 
 
 class JobEnrichmentService:
@@ -83,18 +590,46 @@ class JobEnrichmentService:
         self.jobs = JobRepository(db)
         self.web_sources = JobWebSourceRepository(db)
 
-    def is_enrichment_needed(self, job: Job) -> bool:
+    def is_enrichment_needed(
+        self,
+        job: Job | JobEnrichmentSnapshot,
+        *,
+        force: bool = False,
+        now: datetime | None = None,
+    ) -> bool:
         """Decide if a job needs web discovery & enrichment."""
-        desc = job.description or ""
-        word_count = len(desc.split())
-        is_short = word_count < settings.job_enrichment_min_words
-        is_insufficient = (job.description_status or "") == "insufficient_description"
-        no_canonical = not (job.canonical_url or job.company_job_url)
+        if isinstance(job, JobEnrichmentSnapshot):
+            return is_enrichment_needed(job, force=force, now=now)
 
-        # Force enrichment if pending or insufficient
-        if job.enrichment_status == "pending":
-            return True
-        return (is_short or is_insufficient) and no_canonical
+        snapshot = JobEnrichmentSnapshot(
+            job_id=job.id,
+            user_id=job.user_id,
+            title=job.title,
+            company=job.company,
+            description=job.description,
+            description_status=job.description_status,
+            posted_at=job.posted_at,
+            posted_at_source=job.posted_at_source,
+            posted_at_confidence=job.posted_at_confidence,
+            valid_through=job.valid_through,
+            email_received_at=job.email_received_at,
+            discovered_at=job.discovered_at,
+            freshness_status=job.freshness_status,
+            availability_status=job.availability_status,
+            enrichment_status=job.enrichment_status,
+            content_hash=job.content_hash,
+            canonical_url=job.canonical_url,
+            company_job_url=job.company_job_url,
+            application_url=job.application_url,
+            linkedin_url=job.linkedin_url,
+            url=job.url,
+            last_enriched_at=job.last_enriched_at,
+            last_verified_at=job.last_verified_at,
+            work_mode=job.work_mode,
+            location=job.location,
+            employment_type=job.employment_type,
+        )
+        return is_enrichment_needed(snapshot, force=force, now=now)
 
     async def enrich_job(
         self,
@@ -103,11 +638,10 @@ class JobEnrichmentService:
         force: bool = False,
     ) -> JobEnrichmentOutcome:
         """Run discovery, enrichment, and freshness calculation for a single job posting.
-        Network operations run outside the database transaction.
+        Network operations execute detached without holding active DB transactions.
         """
-        # Step 1: Read snapshot from DB
-        job = self.jobs.get(job_id)
-        if job is None:
+        snapshot = take_snapshot(self.db, job_id)
+        if snapshot is None:
             return JobEnrichmentOutcome(
                 job_id=job_id,
                 status="failed",
@@ -118,264 +652,12 @@ class JobEnrichmentService:
                 error_message="İlan bulunamadı.",
             )
 
-        user_id = job.user_id
-        title = job.title
-        company = job.company
-        existing_desc = job.description or ""
-        email_received_at = job.email_received_at
-        discovered_at = job.discovered_at
-        existing_linkedin = job.linkedin_url
-        existing_url = job.url
-
-        needs_enrichment = force or self.is_enrichment_needed(job)
-
-        # If already adequate and not forced, just re-evaluate freshness
-        if not needs_enrichment:
-            date_eval = evaluate_posted_at(
-                email_received_at=email_received_at,
-                discovered_at=discovered_at,
-            )
-            freshness_res = calculate_freshness(
-                effective_posted_at=job.posted_at or date_eval.effective_posted_at,
-                valid_through=job.valid_through,
-            )
-            job.freshness_status = freshness_res.freshness_status
-            job.availability_status = freshness_res.availability_status
-            if job.enrichment_status == "pending":
-                job.enrichment_status = "skipped"
-            job.last_verified_at = datetime.now(timezone.utc)
-            self.db.flush()
-            return JobEnrichmentOutcome(
-                job_id=job_id,
-                status="completed",
-                enrichment_status=job.enrichment_status,
-                freshness_status=job.freshness_status,
-                availability_status=job.availability_status,
-            )
-
-        # Step 2: Search for official / ATS postings
-        queries = [
-            f'"{company}" "{title}" careers job',
-            f'"{title}" "{company}" hiring',
-            f'site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com "{company}" "{title}"',
-            f'"{company}" "{title}" apply',
-        ][: settings.web_search_max_queries_per_job]
-
-        search_results: list[SearchResult] = []
-        for q in queries:
-            try:
-                results = await self.search_provider.search(
-                    q, limit=settings.web_search_max_results_per_query
-                )
-                search_results.extend(results)
-            except Exception as exc:
-                logger.warning("Arama sorgusu başarısız (%s): %s", q, exc)
-
-        # Deduplicate search results by normalized URL
-        seen_urls: set[str] = set()
-        candidate_urls: list[str] = []
-        discovered_linkedin_url: str | None = None
-
-        for res in search_results:
-            norm = normalize_url(res.url)
-            if not norm:
-                continue
-
-            # If search returns a LinkedIn URL, save it as navigation link ONLY (never fetch!)
-            if is_linkedin_url(norm):
-                if not discovered_linkedin_url and not existing_linkedin:
-                    discovered_linkedin_url = normalize_linkedin_job_url(norm)
-                continue
-
-            if norm not in seen_urls:
-                seen_urls.add(norm)
-                candidate_urls.append(res.url)
-
-        # Prioritize candidates by domain trust
-        def _candidate_priority(u: str) -> int:
-            _, trust, _ = classify_source(u, company)
-            return trust
-
-        candidate_urls.sort(key=_candidate_priority, reverse=True)
-        # Limit to top 5 candidates
-        candidate_urls = candidate_urls[:5]
-
-        # Step 3: Fetch candidate pages
-        candidates: list[EnrichmentCandidate] = []
-
-        async def _fetch_candidate(c_url: str) -> EnrichmentCandidate | None:
-            norm_c = normalize_url(c_url) or c_url
-            host = extract_domain(c_url) or "unknown"
-            source_type, trust, _ = classify_source(c_url, company)
-
-            try:
-                fetch_res = await self.fetcher.fetch(c_url)
-                if fetch_res.status_code in {404, 410}:
-                    return EnrichmentCandidate(
-                        url=c_url,
-                        normalized_url=norm_c,
-                        host=host,
-                        source_type=source_type,
-                        trust_level=trust,
-                        match_confidence="none",
-                        title=None,
-                        extracted_data=None,
-                        http_status=fetch_res.status_code,
-                        content_hash=None,
-                    )
-
-                extracted = extract_job_posting(fetch_res.content)
-                if not extracted:
-                    return None
-
-                match_conf = calculate_match_confidence(
-                    title,
-                    extracted.title,
-                    company,
-                    extracted.company,
-                    source_type=source_type,
-                )
-                c_hash = compute_content_hash(extracted.description)
-
-                return EnrichmentCandidate(
-                    url=c_url,
-                    normalized_url=norm_c,
-                    host=host,
-                    source_type=source_type,
-                    trust_level=trust,
-                    match_confidence=match_conf,
-                    title=extracted.title,
-                    extracted_data=extracted,
-                    http_status=fetch_res.status_code,
-                    content_hash=c_hash,
-                )
-            except LinkedInFetchForbiddenError:
-                return None
-            except WebFetchError as exc:
-                logger.debug("Aday sayfa çekilemedi (%s): %s", c_url, exc)
-                return None
-            except Exception as exc:
-                logger.debug("Beklenmeyen sayfa işleme hatası (%s): %s", c_url, exc)
-                return None
-
-        if candidate_urls:
-            fetched_results = await asyncio.gather(*(_fetch_candidate(u) for u in candidate_urls))
-            candidates = [c for c in fetched_results if c is not None]
-
-        # Step 4: Pick best canonical candidate
-        valid_candidates = [
-            c for c in candidates
-            if c.extracted_data and c.match_confidence in {"high", "medium"} and c.extracted_data.description
-        ]
-
-        # Sort: trust_level desc, match_confidence high > medium, description length desc
-        def _rank_key(c: EnrichmentCandidate) -> tuple[int, int, int]:
-            conf_score = 2 if c.match_confidence == "high" else 1
-            desc_len = len(c.extracted_data.description or "") if c.extracted_data else 0
-            return (c.trust_level, conf_score, desc_len)
-
-        valid_candidates.sort(key=_rank_key, reverse=True)
-        best = valid_candidates[0] if valid_candidates else None
-
-        # Step 5: Persist results in short DB transaction
-        now = datetime.now(timezone.utc)
-        desc_updated = False
-
-        if best and best.extracted_data:
-            extracted = best.extracted_data
-
-            # Date calculation
-            date_eval = evaluate_posted_at(
-                json_ld_date=extracted.date_posted,
-                html_meta_date=extracted.date_posted if extracted.source_type == "semantic_html" else None,
-                email_received_at=email_received_at,
-                discovered_at=discovered_at,
-                now=now,
-            )
-
-            # Freshness calculation
-            freshness_res = calculate_freshness(
-                effective_posted_at=date_eval.effective_posted_at,
-                valid_through=extracted.valid_through,
-                is_closed=extracted.is_closed,
-                now=now,
-            )
-
-            # Update job fields
-            job.canonical_url = best.url
-            if best.source_type == "ats":
-                job.application_url = best.url
-            elif best.source_type == "official":
-                job.company_job_url = best.url
-
-            # Enrich description if candidate description is richer
-            if extracted.description and len(extracted.description) > len(existing_desc):
-                job.description = extracted.description
-                job.description_status = "ok"
-                job.content_hash = best.content_hash
-                desc_updated = True
-
-            job.posted_at = date_eval.effective_posted_at
-            job.posted_at_source = date_eval.posted_at_source
-            job.posted_at_confidence = date_eval.posted_at_confidence
-            job.valid_through = extracted.valid_through
-            job.freshness_status = freshness_res.freshness_status
-            job.availability_status = freshness_res.availability_status
-            job.enrichment_status = "enriched"
-            job.last_enriched_at = now
-            job.last_verified_at = now
-
-        else:
-            # No valid candidate discovered: evaluate freshness based on email date
-            date_eval = evaluate_posted_at(
-                email_received_at=email_received_at,
-                discovered_at=discovered_at,
-                now=now,
-            )
-            freshness_res = calculate_freshness(
-                effective_posted_at=job.posted_at or date_eval.effective_posted_at,
-                valid_through=job.valid_through,
-                now=now,
-            )
-            job.posted_at = job.posted_at or date_eval.effective_posted_at
-            job.posted_at_source = job.posted_at_source or date_eval.posted_at_source
-            job.posted_at_confidence = job.posted_at_confidence or date_eval.posted_at_confidence
-            job.freshness_status = freshness_res.freshness_status
-            job.availability_status = freshness_res.availability_status
-            job.enrichment_status = "not_found"
-            job.last_enriched_at = now
-            job.last_verified_at = now
-
-        # Update LinkedIn URL if discovered
-        if discovered_linkedin_url and not job.linkedin_url:
-            job.linkedin_url = discovered_linkedin_url
-
-        # Record all discovered web sources for provenance
-        for c in candidates:
-            self.web_sources.upsert(
-                user_id=user_id,
-                job_id=job.id,
-                url=c.url,
-                normalized_url=c.normalized_url,
-                host=c.host,
-                source_type=c.source_type,
-                trust_level=c.trust_level,
-                match_confidence=c.match_confidence,
-                title=c.title,
-                snippet=c.extracted_data.description[:300] if (c.extracted_data and c.extracted_data.description) else None,
-                http_status=c.http_status,
-                content_hash=c.content_hash,
-                selected_as_canonical=(best is not None and c.url == best.url),
-            )
-
-        self.db.flush()
-
-        return JobEnrichmentOutcome(
-            job_id=job_id,
-            status="completed",
-            enrichment_status=job.enrichment_status,
-            freshness_status=job.freshness_status,
-            availability_status=job.availability_status,
-            canonical_url=job.canonical_url,
-            description_updated=desc_updated,
+        # Pure async network operations run outside DB transaction
+        result = await execute_enrichment_flow(
+            snapshot,
+            self.search_provider,
+            self.fetcher,
+            force=force,
         )
+
+        return persist_result(self.db, result, snapshot)

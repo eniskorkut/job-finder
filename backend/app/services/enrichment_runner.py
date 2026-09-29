@@ -20,7 +20,12 @@ from app.integrations.web_search.base import SearchProvider
 from app.models.enums import SyncJobStatus
 from app.models.sync_job import EnrichmentItem, SyncJob
 from app.repositories.sync_jobs import EnrichmentItemRepository
-from app.services.job_enrichment.service import JobEnrichmentService
+from app.services.job_enrichment.service import (
+    JobEnrichmentService,
+    execute_enrichment_flow,
+    persist_result,
+    take_snapshot,
+)
 
 logger = logging.getLogger("jobhunter.enrichment_runner")
 
@@ -102,89 +107,112 @@ class EnrichmentRunner:
         failed = 0
         skipped = 0
 
-        async def _process_item(item_id: uuid.UUID) -> None:
-            nonlocal processed, enriched, failed, skipped
-            async with semaphore:
-                if self._is_cancelled():
+        try:
+            async def _process_item(item_id: uuid.UUID) -> None:
+                nonlocal processed, enriched, failed, skipped
+                async with semaphore:
+                    if self._is_cancelled():
+                        with self._db() as session:
+                            repo = EnrichmentItemRepository(session)
+                            item = repo.get(item_id)
+                            if item and item.status in {"queued", "running"}:
+                                repo.mark_finished(
+                                    item,
+                                    status="skipped",
+                                    error_message="Kullanıcı işi iptal etti.",
+                                )
+                        skipped += 1
+                        return
+
+                    # Step 1: Claim atomically and take detached snapshot (Short DB transaction)
+                    target_job_id = None
+                    snapshot = None
                     with self._db() as session:
                         repo = EnrichmentItemRepository(session)
                         item = repo.get(item_id)
-                        if item and item.status in {"queued", "running"}:
-                            repo.mark_finished(
-                                item,
-                                status="skipped",
-                                error_message="Kullanıcı işi iptal etti.",
-                            )
-                    skipped += 1
-                    return
+                        if item is None or not repo.claim(item):
+                            return
+                        target_job_id = item.job_id
+                        snapshot = take_snapshot(session, target_job_id)
 
-                # Step 1: Claim atomically
-                target_job_id = None
-                with self._db() as session:
-                    repo = EnrichmentItemRepository(session)
-                    item = repo.get(item_id)
-                    if item is None or not repo.claim(item):
+                    if not target_job_id or snapshot is None:
                         return
-                    target_job_id = item.job_id
 
-                if not target_job_id:
-                    return
+                    # Step 2: Run enrichment flow with ZERO active DB locks!
+                    outcome_status = "completed"
+                    enrich_status = "failed"
+                    err_class = None
+                    err_msg = None
+                    canonical = None
+                    result = None
 
-                # Step 2: Run enrichment outside long DB lock
-                outcome_status = "completed"
-                enrich_status = "failed"
-                err_class = None
-                err_msg = None
-                canonical = None
-
-                with self._db() as session:
-                    service = JobEnrichmentService(
-                        session,
-                        search_provider=search_provider,
-                        fetcher=fetcher,
-                    )
                     try:
-                        res = await service.enrich_job(target_job_id, force=force)
-                        enrich_status = res.enrichment_status
-                        canonical = res.canonical_url
+                        result = await execute_enrichment_flow(
+                            snapshot,
+                            search_provider,
+                            fetcher,
+                            force=force,
+                            now=self._origin,
+                        )
+                        enrich_status = result.enrichment_status
+                        canonical = result.canonical_url
+                        if result.status == "failed":
+                            outcome_status = "failed"
+                            err_class = result.error_class
+                            err_msg = result.error_message
                     except Exception as exc:
                         logger.exception("İlan zenginleştirme hatası (job=%s): %s", target_job_id, exc)
                         outcome_status = "failed"
                         err_class = type(exc).__name__
                         err_msg = str(exc)[:300]
 
-                # Step 3: Record item outcome
-                with self._db() as session:
-                    repo = EnrichmentItemRepository(session)
-                    item = repo.get(item_id)
-                    if item is not None:
-                        repo.mark_finished(
-                            item,
-                            status=outcome_status,
-                            source_url=canonical,
-                            error_class=err_class,
-                            error_message=err_msg,
-                        )
-                    # Update sync job progress
-                    job = session.get(SyncJob, job_id)
-                    if job is not None:
-                        current_prog = dict(job.progress or {})
-                        current_prog["processed"] = current_prog.get("processed", 0) + 1
-                        if enrich_status == "enriched":
-                            current_prog["enriched"] = current_prog.get("enriched", 0) + 1
-                        elif outcome_status == "failed":
-                            current_prog["failed"] = current_prog.get("failed", 0) + 1
-                        job.progress = current_prog
-                        if outcome_status == "failed":
-                            job.errors_count += 1
+                    # Step 3: Persist result and record item outcome (Short DB transaction)
+                    with self._db() as session:
+                        if result is not None:
+                            try:
+                                persist_result(session, result, snapshot)
+                            except Exception as exc:
+                                logger.exception("Zenginleştirme sonucu kaydedilemedi (job=%s): %s", target_job_id, exc)
+                                outcome_status = "failed"
+                                err_class = type(exc).__name__
+                                err_msg = str(exc)[:300]
 
-                processed += 1
-                if enrich_status == "enriched":
-                    enriched += 1
-                elif outcome_status == "failed":
-                    failed += 1
+                        repo = EnrichmentItemRepository(session)
+                        item = repo.get(item_id)
+                        if item is not None:
+                            repo.mark_finished(
+                                item,
+                                status=outcome_status,
+                                source_url=canonical,
+                                error_class=err_class,
+                                error_message=err_msg,
+                            )
+                        # Update sync job progress
+                        job = session.get(SyncJob, job_id)
+                        if job is not None:
+                            current_prog = dict(job.progress or {})
+                            current_prog["processed"] = current_prog.get("processed", 0) + 1
+                            if enrich_status == "enriched":
+                                current_prog["enriched"] = current_prog.get("enriched", 0) + 1
+                            elif outcome_status == "failed":
+                                current_prog["failed"] = current_prog.get("failed", 0) + 1
+                            job.progress = current_prog
+                            if outcome_status == "failed":
+                                job.errors_count += 1
 
-        await asyncio.gather(*(_process_item(i_id) for i_id in item_ids))
+                    processed += 1
+                    if enrich_status == "enriched":
+                        enriched += 1
+                    elif outcome_status == "failed":
+                        failed += 1
+
+            await asyncio.gather(*(_process_item(i_id) for i_id in item_ids))
+
+        finally:
+            if hasattr(search_provider, "close"):
+                await search_provider.close()
+            if hasattr(fetcher, "close"):
+                await fetcher.close()
 
         final_status = SyncJobStatus.COMPLETED
         if self._is_cancelled():

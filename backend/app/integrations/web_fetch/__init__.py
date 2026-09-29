@@ -2,9 +2,13 @@
 
 from app.integrations.web_fetch.fetcher import (
     FetchResult,
+    FetchTimeoutError,
+    FetchUnavailableError,
     InvalidContentTypeError,
     LinkedInFetchForbiddenError,
     ResponseTooLargeError,
+    SSRFGuardedBackend,
+    SSRFGuardedTransport,
     SSRFProtectionError,
     SafeWebFetcher,
     TooManyRedirectsError,
@@ -13,9 +17,13 @@ from app.integrations.web_fetch.fetcher import (
 
 __all__ = [
     "FetchResult",
+    "FetchTimeoutError",
+    "FetchUnavailableError",
     "InvalidContentTypeError",
     "LinkedInFetchForbiddenError",
     "ResponseTooLargeError",
+    "SSRFGuardedBackend",
+    "SSRFGuardedTransport",
     "SSRFProtectionError",
     "SafeWebFetcher",
     "TooManyRedirectsError",

@@ -17,6 +17,8 @@ SORT_OPTIONS = {
     "score_asc": (JobMatch.score.asc().nulls_last(), Job.discovered_at.desc()),
     "company": (Job.company.asc(), Job.discovered_at.desc()),
     "title": (Job.title.asc(), Job.discovered_at.desc()),
+    "posted_at": (Job.posted_at.desc().nulls_last(), Job.discovered_at.desc()),
+    "freshness": (Job.freshness_status.asc(), Job.discovered_at.desc()),
 }
 
 
@@ -211,6 +213,25 @@ class JobRepository(Repository[Job]):
             .limit(5)
         ).all()
 
+        enrich_rows = self.db.execute(
+            select(Job.enrichment_status, func.count(Job.id))
+            .where(Job.user_id == user_id, Job.is_mock.is_(False))
+            .group_by(Job.enrichment_status)
+        ).all()
+        enrich_counts = {status: int(count) for status, count in enrich_rows}
+        enriched_jobs = enrich_counts.get("enriched", 0)
+        pending_enrichment = enrich_counts.get("pending", 0)
+
+        fresh_rows = self.db.execute(
+            select(Job.freshness_status, func.count(Job.id))
+            .where(Job.user_id == user_id, Job.is_mock.is_(False))
+            .group_by(Job.freshness_status)
+        ).all()
+        fresh_counts = {status: int(count) for status, count in fresh_rows}
+        fresh_jobs = fresh_counts.get("fresh", 0)
+        stale_jobs = fresh_counts.get("stale", 0)
+        expired_jobs = fresh_counts.get("expired", 0)
+
         return {
             "total_jobs": total,
             "new_jobs": new_jobs,
@@ -233,6 +254,11 @@ class JobRepository(Repository[Job]):
                 if average_confidence is not None
                 else None
             ),
+            "enriched_jobs": enriched_jobs,
+            "pending_enrichment": pending_enrichment,
+            "fresh_jobs": fresh_jobs,
+            "stale_jobs": stale_jobs,
+            "expired_jobs": expired_jobs,
         }
 
     def filter_options(self, user_id: uuid.UUID) -> dict:
@@ -257,12 +283,24 @@ class JobRepository(Repository[Job]):
             .where(JobMatch.user_id == user_id)
             .group_by(JobMatch.analysis_status)
         ).scalars()
+        freshness_statuses = self.db.execute(
+            select(Job.freshness_status)
+            .where(Job.user_id == user_id, Job.freshness_status.is_not(None))
+            .group_by(Job.freshness_status)
+        ).scalars()
+        enrichment_statuses = self.db.execute(
+            select(Job.enrichment_status)
+            .where(Job.user_id == user_id, Job.enrichment_status.is_not(None))
+            .group_by(Job.enrichment_status)
+        ).scalars()
         return {
             "sources": list(sources),
             "locations": list(locations),
             "companies": list(companies),
             "work_modes": list(work_modes),
             "analysis_statuses": [status for status in analysis_statuses if status],
+            "freshness_statuses": [status for status in freshness_statuses if status],
+            "enrichment_statuses": [status for status in enrichment_statuses if status],
         }
 
     def latest_discovered_at(self, user_id: uuid.UUID) -> datetime | None:
@@ -381,6 +419,8 @@ class JobWebSourceRepository(Repository[JobWebSource]):
         http_status: int | None = None,
         content_hash: str | None = None,
         selected_as_canonical: bool = False,
+        etag: str | None = None,
+        last_modified: str | None = None,
     ) -> JobWebSource:
         existing = self.get_by_normalized_url(job_id, normalized_url)
         if existing is not None:
@@ -397,6 +437,10 @@ class JobWebSourceRepository(Repository[JobWebSource]):
                 existing.http_status = http_status
             if content_hash:
                 existing.content_hash = content_hash
+            if etag:
+                existing.etag = etag
+            if last_modified:
+                existing.last_modified = last_modified
             if selected_as_canonical:
                 existing.selected_as_canonical = True
             existing.last_checked_at = datetime.now(timezone.utc)
@@ -416,6 +460,8 @@ class JobWebSourceRepository(Repository[JobWebSource]):
             snippet=snippet,
             http_status=http_status,
             content_hash=content_hash,
+            etag=etag,
+            last_modified=last_modified,
             selected_as_canonical=selected_as_canonical,
             discovered_at=datetime.now(timezone.utc),
             last_checked_at=datetime.now(timezone.utc),

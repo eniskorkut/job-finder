@@ -8,11 +8,14 @@ x-backend-common: &backend-common
   volumes:
     - job_finder_data:/app/data
     - ./backend/.env.local:/app/.env.local:ro
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   environment:
     - DATABASE_URL=sqlite:////app/data/jobhunter.db
     - DATA_DIR=/app/data
     - FRONTEND_URL=http://localhost:3000
     - BACKEND_URL=http://localhost:8000
+    - WEB_SEARCH_SEARXNG_URL=${WEB_SEARCH_SEARXNG_URL:-http://host.docker.internal:8080}
 
 services:
   backend-migrate:

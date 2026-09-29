@@ -100,11 +100,26 @@ export const connectionStatusLabels: Record<string, string> = {
   error: "Hata",
 };
 
+export function safeExternalUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return trimmed;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+  return null;
+}
+
 export const freshnessLabels: Record<string, string> = {
   fresh: "Taze (0-3g)",
   aging: "Güncel (4-7g)",
   stale: "Eski (8-14g)",
   expired: "Süresi doldu (>14g)",
+  unknown: "Bilinmiyor",
 };
 
 export const freshnessVariants: Record<string, "success" | "warning" | "danger" | "muted"> = {
@@ -112,17 +127,22 @@ export const freshnessVariants: Record<string, "success" | "warning" | "danger" 
   aging: "warning",
   stale: "warning",
   expired: "danger",
+  unknown: "muted",
 };
 
 export const availabilityLabels: Record<string, string> = {
   active: "Yayında",
   closed: "Kapanmış",
+  possibly_closed: "Muhtemelen kapandı (404)",
+  removed: "Kaldırılmış (410)",
   unknown: "Bilinmiyor",
 };
 
-export const availabilityVariants: Record<string, "success" | "danger" | "muted"> = {
+export const availabilityVariants: Record<string, "success" | "danger" | "muted" | "warning"> = {
   active: "success",
   closed: "danger",
+  possibly_closed: "warning",
+  removed: "danger",
   unknown: "muted",
 };
 

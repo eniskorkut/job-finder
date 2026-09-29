@@ -58,8 +58,8 @@ export interface JobMatch {
   match_details: Record<string, DimensionMatch>;
 }
 
-export type FreshnessStatus = "fresh" | "aging" | "stale" | "expired";
-export type AvailabilityStatus = "active" | "closed" | "unknown";
+export type FreshnessStatus = "fresh" | "aging" | "stale" | "expired" | "unknown";
+export type AvailabilityStatus = "active" | "closed" | "possibly_closed" | "removed" | "unknown";
 export type EnrichmentStatus = "pending" | "enriched" | "skipped" | "not_found" | "failed";
 
 export interface JobWebSource {
@@ -168,6 +168,12 @@ export interface JobStats {
   failed_analysis: number;
   notified_jobs: number;
   average_confidence: number | null;
+  // phase 4
+  enriched_jobs?: number;
+  pending_enrichment?: number;
+  fresh_jobs?: number;
+  stale_jobs?: number;
+  expired_jobs?: number;
 }
 
 export interface JobFilterOptions {
@@ -176,6 +182,8 @@ export interface JobFilterOptions {
   companies: string[];
   work_modes: string[];
   analysis_statuses: string[];
+  freshness_statuses?: string[];
+  enrichment_statuses?: string[];
 }
 
 export interface Preferences {

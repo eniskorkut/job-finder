@@ -398,6 +398,7 @@ class ScoringRunner:
                 "work_mode": job.work_mode,
                 "description": redact_job_text(job.description),
                 "description_status": job.description_status,
+                "content_hash": job.content_hash,
             }
             db.flush()
 
@@ -456,6 +457,7 @@ class ScoringRunner:
                 model=info.model,
                 cv_checksum=checksum,
                 prompt_version=getattr(client, "prompt_version", PROMPT_VERSION),
+                job_content_hash=snapshot.get("content_hash"),
             )
             ScoringItemRepository(db).mark_finished(
                 _item_row(db, item_id), status="succeeded", match_id=match.id
@@ -488,6 +490,7 @@ class ScoringRunner:
         model: str | None,
         cv_checksum: str | None,
         prompt_version: str,
+        job_content_hash: str | None = None,
     ) -> None:
         match.score = result.match_score
         match.confidence = result.confidence
@@ -507,6 +510,7 @@ class ScoringRunner:
         match.insufficient_information = bool(result.insufficient_information)
         match.model = model
         match.cv_checksum = cv_checksum
+        match.job_content_hash = job_content_hash
         match.prompt_version = prompt_version
         match.analysis_status = ANALYSIS_COMPLETED
         match.analysis_error = None

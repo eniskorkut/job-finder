@@ -18,7 +18,7 @@ class DateEvaluationResult:
 @dataclass(slots=True)
 class FreshnessResult:
     freshness_status: str  # "fresh", "aging", "stale", "expired"
-    availability_status: str  # "active", "closed", "unknown"
+    availability_status: str  # "active", "closed", "possibly_closed", "removed", "unknown"
     age_days: float
     should_auto_score: bool
 
@@ -33,7 +33,7 @@ def evaluate_posted_at(
 ) -> DateEvaluationResult:
     """Determine effective posted_at date, source, and confidence according to strict precedence rules:
     JSON-LD date (high) > HTML meta date (medium) > Email received date (low) > Discovered date (low).
-    Future dates beyond 24h are clamped/discarded.
+    Future dates beyond 24h are rejected, triggering fallback to email or discovery date.
     """
     current_time = now or datetime.now(timezone.utc)
     max_future_cutoff = current_time + timedelta(hours=24)
@@ -44,8 +44,9 @@ def evaluate_posted_at(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         dt_utc = dt.astimezone(timezone.utc)
+        # Dates further than 24 hours into the future are rejected (bad source data)
         if dt_utc > max_future_cutoff:
-            return current_time
+            return None
         return dt_utc
 
     # 1. JSON-LD datePosted
@@ -89,6 +90,7 @@ def calculate_freshness(
     effective_posted_at: datetime | None,
     valid_through: datetime | None = None,
     is_closed: bool = False,
+    availability_status: str | None = None,
     now: datetime | None = None,
     max_age_days: int | None = None,
 ) -> FreshnessResult:
@@ -98,7 +100,15 @@ def calculate_freshness(
     current_time = now or datetime.now(timezone.utc)
     max_age = max_age_days if max_age_days is not None else settings.job_max_age_days
 
-    # Explicitly closed
+    # Explicitly closed, removed, or possibly_closed
+    if availability_status in {"possibly_closed", "removed", "closed"}:
+        return FreshnessResult(
+            freshness_status="expired",
+            availability_status=availability_status,
+            age_days=0.0,
+            should_auto_score=False,
+        )
+
     if is_closed:
         return FreshnessResult(
             freshness_status="expired",
@@ -107,15 +117,25 @@ def calculate_freshness(
             should_auto_score=False,
         )
 
+    # Check broken valid_through (< effective_posted_at)
+    cleaned_valid_through = valid_through
+    if cleaned_valid_through is not None and effective_posted_at is not None:
+        if cleaned_valid_through.tzinfo is None:
+            cleaned_valid_through = cleaned_valid_through.replace(tzinfo=timezone.utc)
+        eff_tz = effective_posted_at if effective_posted_at.tzinfo else effective_posted_at.replace(tzinfo=timezone.utc)
+        if cleaned_valid_through < eff_tz:
+            # Broken validThrough before posted date; ignore it
+            cleaned_valid_through = None
+
     # Expired via validThrough
-    if valid_through is not None:
-        if valid_through.tzinfo is None:
-            valid_through = valid_through.replace(tzinfo=timezone.utc)
-        if valid_through < current_time:
+    if cleaned_valid_through is not None:
+        if cleaned_valid_through.tzinfo is None:
+            cleaned_valid_through = cleaned_valid_through.replace(tzinfo=timezone.utc)
+        if cleaned_valid_through < current_time:
             return FreshnessResult(
                 freshness_status="expired",
                 availability_status="closed",
-                age_days=max(0.0, (current_time - valid_through).total_seconds() / 86400),
+                age_days=max(0.0, (current_time - cleaned_valid_through).total_seconds() / 86400),
                 should_auto_score=False,
             )
 
@@ -141,12 +161,12 @@ def calculate_freshness(
     else:
         freshness_status = "expired"
 
-    availability_status = "active"
+    eff_availability = availability_status or "active"
     should_auto_score = (freshness_status != "expired") and (age_days <= max_age)
 
     return FreshnessResult(
         freshness_status=freshness_status,
-        availability_status=availability_status,
+        availability_status=eff_availability,
         age_days=round(age_days, 1),
         should_auto_score=should_auto_score,
     )

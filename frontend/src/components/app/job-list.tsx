@@ -31,6 +31,7 @@ import {
   freshnessVariants,
   enrichmentLabels,
   enrichmentVariants,
+  safeExternalUrl,
 } from "@/lib/format";
 import { useApiQuery } from "@/lib/hooks";
 import type { Job, JobFilterOptions, Page, RefreshJobResponse } from "@/lib/types";
@@ -45,6 +46,7 @@ interface Filters {
   analysisStatus: string;
   notification: string;
   freshness: string;
+  enrichment: string;
   sort: string;
 }
 
@@ -58,6 +60,7 @@ const emptyFilters: Filters = {
   analysisStatus: "",
   notification: "",
   freshness: "",
+  enrichment: "",
   sort: "score",
 };
 
@@ -108,6 +111,7 @@ export function JobList({
         analysis_status: filters.analysisStatus,
         notification: filters.notification,
         freshness_status: filters.freshness,
+        enrichment_status: filters.enrichment,
         sort: filters.sort,
         page,
         page_size: pageSize,
@@ -122,6 +126,7 @@ export function JobList({
       filters.analysisStatus,
       filters.notification,
       filters.freshness,
+      filters.enrichment,
       filters.sort,
       page,
       pageSize,
@@ -293,17 +298,31 @@ export function JobList({
               <option value="expired">Süresi doldu (&gt;14 gün)</option>
             </Select>
             <Select
+              value={filters.enrichment}
+              onChange={(event) => update("enrichment", event.target.value)}
+              aria-label="Zenginleştirme durumu"
+            >
+              <option value="">Tüm zenginleştirme durumları</option>
+              <option value="enriched">Zenginleştirilmiş olanlar</option>
+              <option value="pending">Zenginleştirme bekleyenler</option>
+              <option value="skipped">Atlananlar (Yeterli açıklama)</option>
+              <option value="not_found">Kaynak bulunamayanlar</option>
+              <option value="failed">Hata verenler</option>
+            </Select>
+            <Select
               value={filters.sort}
               onChange={(event) => update("sort", event.target.value)}
               aria-label="Sıralama"
             >
-              <option value="recent">En yeni</option>
-              <option value="oldest">En eski</option>
+              <option value="recent">Keşfe göre (en yeni)</option>
+              <option value="posted_at">Yayın tarihine göre</option>
+              <option value="freshness">Tazelik durumuna göre</option>
               <option value="score">Puan (yüksek → düşük)</option>
               <option value="score_asc">Puan (düşük → yüksek)</option>
               <option value="confidence">Güven (yüksek → düşük)</option>
               <option value="company">Şirket (A → Z)</option>
               <option value="title">Başlık (A → Z)</option>
+              <option value="oldest">En eski</option>
             </Select>
           </div>
         </div>
@@ -425,32 +444,39 @@ export function JobList({
                         ) : null}
                       </div>
 
-                      {(job.linkedin_url || job.canonical_url || job.application_url || job.company_job_url) ? (
-                        <div className="mt-1 flex flex-wrap items-center gap-3 pt-1 border-t border-line/30">
-                          {job.linkedin_url ? (
-                            <a
-                              href={job.linkedin_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
-                            >
-                              <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
-                              LinkedIn&apos;de Aç
-                            </a>
-                          ) : null}
-                          {(job.canonical_url || job.application_url || job.company_job_url) ? (
-                            <a
-                              href={job.canonical_url || job.application_url || job.company_job_url!}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
-                            >
-                              <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
-                              Başvuru / Kaynak
-                            </a>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      {(() => {
+                        const safeLi = safeExternalUrl(job.linkedin_url);
+                        const safeApp = safeExternalUrl(
+                          job.canonical_url || job.application_url || job.company_job_url,
+                        );
+                        if (!safeLi && !safeApp) return null;
+                        return (
+                          <div className="mt-1 flex flex-wrap items-center gap-3 pt-1 border-t border-line/30">
+                            {safeLi ? (
+                              <a
+                                href={safeLi}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
+                              >
+                                <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
+                                LinkedIn&apos;de Aç
+                              </a>
+                            ) : null}
+                            {safeApp ? (
+                              <a
+                                href={safeApp}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-ink underline-offset-2 pointer-hover:underline"
+                              >
+                                <ExternalLink aria-hidden className="size-3" strokeWidth={2} />
+                                Başvuru / Kaynak
+                              </a>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-2">

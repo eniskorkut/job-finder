@@ -77,8 +77,17 @@ class Settings(BaseSettings):
     worker_id: str = ""
 
     # Testing & simulation hooks (never active in production unless explicitly set)
+    enable_acceptance_test_hooks: bool = False
     test_job_delay_seconds: float = 0.0
     test_barrier_file: str | None = None
+
+    def is_test_hook_allowed(self) -> bool:
+        """Testing hooks (e.g. test_delay_seconds, test_barrier) are strictly forbidden
+        in production and only active in test/development when explicitly enabled.
+        """
+        if (self.environment or "").lower() not in {"test", "development"}:
+            return False
+        return bool(self.enable_acceptance_test_hooks)
 
     # Outbound HTTP
     sync_http_timeout_seconds: float = 30.0
@@ -142,11 +151,14 @@ class Settings(BaseSettings):
     web_search_max_queries_per_job: int = 4
     web_search_max_results_per_query: int = 5
     web_search_timeout_seconds: float = 10.0
+    web_search_retry_max_attempts: int = 3
 
     web_fetch_max_concurrency: int = 4
     web_fetch_timeout_seconds: float = 15.0
     web_fetch_max_bytes: int = 2 * 1024 * 1024  # 2MB
     web_fetch_max_redirects: int = 5
+    web_fetch_allowed_ports: str = "80,443"
+    web_fetch_retry_max_attempts: int = 3
     web_fetch_user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 (JobHunter/1.0)"
@@ -157,6 +169,16 @@ class Settings(BaseSettings):
     job_stale_days: int = 14
     job_max_age_days: int = 14  # Cut-off for automatic LLM scoring
     job_enrichment_min_words: int = 40  # Description < 40 words considered short/inadequate
+    job_enrichment_ttl_hours: int = 24  # Re-enrichment TTL policy
+
+    @property
+    def allowed_fetch_ports(self) -> set[int]:
+        ports: set[int] = set()
+        for p in (self.web_fetch_allowed_ports or "80,443").split(","):
+            p = p.strip()
+            if p.isdigit():
+                ports.add(int(p))
+        return ports or {80, 443}
 
     @field_validator("cors_origins", mode="before")
     @classmethod

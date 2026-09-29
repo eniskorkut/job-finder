@@ -140,6 +140,12 @@ class JobStats(ORMModel):
     failed_analysis: int = 0
     notified_jobs: int = 0
     average_confidence: float | None = None
+    # phase 4
+    enriched_jobs: int = 0
+    pending_enrichment: int = 0
+    fresh_jobs: int = 0
+    stale_jobs: int = 0
+    expired_jobs: int = 0
 
 
 class JobFilterOptions(ORMModel):
@@ -148,6 +154,8 @@ class JobFilterOptions(ORMModel):
     companies: list[str]
     work_modes: list[str]
     analysis_statuses: list[str] = Field(default_factory=list)
+    freshness_statuses: list[str] = Field(default_factory=list)
+    enrichment_statuses: list[str] = Field(default_factory=list)
 
 
 class ReanalyzeResponse(BaseModel):

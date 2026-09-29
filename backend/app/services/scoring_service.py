@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core import errors
@@ -104,6 +104,13 @@ class ScoringService:
                     JobMatch.analysis_status.in_([ANALYSIS_PENDING, ANALYSIS_FAILED]),
                     JobMatch.cv_checksum.is_(None),
                     JobMatch.cv_checksum != (checksum or ""),
+                    and_(
+                        Job.content_hash.is_not(None),
+                        or_(
+                            JobMatch.job_content_hash.is_(None),
+                            JobMatch.job_content_hash != Job.content_hash,
+                        ),
+                    ),
                 )
             )
 

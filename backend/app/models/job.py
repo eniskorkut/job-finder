@@ -99,7 +99,7 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     posted_at_confidence: Mapped[str | None] = mapped_column(String(20), default=None)
 
     freshness_status: Mapped[str] = mapped_column(
-        String(20), default="fresh", server_default="fresh", index=True
+        String(20), default="unknown", server_default="unknown", index=True
     )
     availability_status: Mapped[str] = mapped_column(
         String(20), default="unknown", server_default="unknown"
@@ -152,6 +152,8 @@ class JobWebSource(UUIDPrimaryKeyMixin, Base):
     snippet: Mapped[str | None] = mapped_column(Text, default=None)
     http_status: Mapped[int | None] = mapped_column(Integer, default=None)
     content_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    etag: Mapped[str | None] = mapped_column(String(255), default=None)
+    last_modified: Mapped[str | None] = mapped_column(String(100), default=None)
     selected_as_canonical: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0"
     )
@@ -218,6 +220,9 @@ class JobMatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), default=None
     )
     cv_checksum: Mapped[str | None] = mapped_column(String(64), default=None)
+    job_content_hash: Mapped[str | None] = mapped_column(
+        String(64), default=None, index=True
+    )
     prompt_version: Mapped[str | None] = mapped_column(String(40), default=None)
 
     status: Mapped[str] = mapped_column(String(20), default=MatchStatus.NEW.value)

@@ -18,6 +18,7 @@ ATS_PATTERNS = [
     (re.compile(r"jobs\.ashbyhq\.com$", re.IGNORECASE), 90, "Ashby"),
     (re.compile(r".*\.teamtailor\.com$", re.IGNORECASE), 85, "Teamtailor"),
     (re.compile(r"apply\.workable\.com$", re.IGNORECASE), 85, "Workable"),
+    (re.compile(r".*\.breezy\.hr$", re.IGNORECASE), 85, "Breezy HR"),
     (re.compile(r".*\.bamboohr\.com$", re.IGNORECASE), 85, "BambooHR"),
     (re.compile(r"jobs\.jobvite\.com$", re.IGNORECASE), 85, "Jobvite"),
     (re.compile(r"recruiting\.ultipro\.com$", re.IGNORECASE), 85, "UKG"),
@@ -62,10 +63,15 @@ def classify_source(url: str, company: str | None = None) -> tuple[str, int, str
 
     # 3. Official company site heuristic
     if company:
-        norm_company = normalize_text_for_match(company).replace(" ", "")
+        norm_company = normalize_text_for_match(company)
+        company_tokens = [t for t in norm_company.split() if t not in {"inc", "corp", "llc", "ltd", "gmbh", "co", "ai", "tech"}]
         norm_host = re.sub(r"[^a-z0-9]", "", host.split(".")[0])
-        if norm_company and (norm_company in norm_host or norm_host in norm_company):
-            return "official", 80, company.strip()
+        # Direct match or token match
+        if norm_company and (norm_company.replace(" ", "") in norm_host or norm_host in norm_company.replace(" ", "")):
+            return "official", 90, company.strip()
+        for token in company_tokens:
+            if len(token) >= 4 and token in host:
+                return "official", 85, company.strip()
 
     # Path check: careers/jobs
     try:

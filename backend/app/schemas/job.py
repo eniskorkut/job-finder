@@ -143,6 +143,7 @@ class JobStats(ORMModel):
     # phase 4
     enriched_jobs: int = 0
     pending_enrichment: int = 0
+    problematic_enrichment: int = 0
     fresh_jobs: int = 0
     stale_jobs: int = 0
     expired_jobs: int = 0

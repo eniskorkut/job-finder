@@ -60,7 +60,16 @@ export interface JobMatch {
 
 export type FreshnessStatus = "fresh" | "aging" | "stale" | "expired" | "unknown";
 export type AvailabilityStatus = "active" | "closed" | "possibly_closed" | "removed" | "unknown";
-export type EnrichmentStatus = "pending" | "enriched" | "skipped" | "not_found" | "failed";
+export type EnrichmentStatus =
+  | "pending"
+  | "enriched"
+  | "skipped"
+  | "not_found"
+  | "search_unavailable"
+  | "search_disabled"
+  | "fetch_failed"
+  | "insufficient"
+  | "failed";
 
 export interface JobWebSource {
   id: string;
@@ -171,6 +180,7 @@ export interface JobStats {
   // phase 4
   enriched_jobs?: number;
   pending_enrichment?: number;
+  problematic_enrichment?: number;
   fresh_jobs?: number;
   stale_jobs?: number;
   expired_jobs?: number;

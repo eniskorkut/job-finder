@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     web_search_searxng_url: str = "http://localhost:8080"
     web_search_searxng_secret_key: str | None = None
     web_search_max_concurrency: int = 2
-    web_search_max_queries_per_job: int = 4
+    web_search_max_queries_per_job: int = 5
     web_search_max_results_per_query: int = 5
     web_search_timeout_seconds: float = 10.0
     web_search_retry_max_attempts: int = 3

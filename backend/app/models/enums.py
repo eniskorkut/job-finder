@@ -110,3 +110,16 @@ class ErrorClass(StrEnum):
     TRANSIENT = "transient"
     PERMANENT = "permanent"
     CURSOR_EXPIRED = "cursor_expired"
+
+
+class EnrichmentStatus(StrEnum):
+    PENDING = "pending"
+    ENRICHED = "enriched"
+    SKIPPED = "skipped"
+    NOT_FOUND = "not_found"
+    SEARCH_UNAVAILABLE = "search_unavailable"
+    SEARCH_DISABLED = "search_disabled"
+    FETCH_FAILED = "fetch_failed"
+    INSUFFICIENT = "insufficient"
+    FAILED = "failed"
+

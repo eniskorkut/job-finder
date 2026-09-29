@@ -43,9 +43,71 @@ def normalize_text_for_match(text: str | None) -> str:
     return " ".join(cleaned.split())
 
 
+LEGAL_SUFFIXES = {
+    "inc", "corp", "corporation", "llc", "ltd", "limited", "as", "a.s", "gmbh",
+    "company", "co", "technology", "technologies", "holding", "group", "ve", "and", "the",
+}
+
+GENERIC_TOKENS = {
+    "ai", "tech", "global", "jobs", "careers", "career", "job", "app", "dev",
+    "cloud", "solutions", "services", "digital", "consulting", "international", "holding",
+}
+
+
+def extract_ats_tenant(url: str) -> str | None:
+    """Extract company/tenant identifier from known ATS URLs."""
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.netloc or "").lower().split(":")[0]
+        path_parts = [p for p in parsed.path.split("/") if p]
+    except Exception:
+        return None
+
+    # boards.greenhouse.io/{tenant}/... or job-boards.greenhouse.io/{tenant}/...
+    if "greenhouse.io" in host:
+        return path_parts[0] if path_parts else None
+
+    # jobs.lever.co/{tenant}/...
+    if "lever.co" in host:
+        return path_parts[0] if path_parts else None
+
+    # {tenant}.myworkdayjobs.com/...
+    if "myworkdayjobs.com" in host:
+        return host.split(".myworkdayjobs.com")[0].split(".")[-1]
+
+    # {tenant}.teamtailor.com/...
+    if "teamtailor.com" in host:
+        return host.split(".teamtailor.com")[0].split(".")[-1]
+
+    # {tenant}.bamboohr.com/...
+    if "bamboohr.com" in host:
+        return host.split(".bamboohr.com")[0].split(".")[-1]
+
+    # {tenant}.breezy.hr/...
+    if "breezy.hr" in host:
+        return host.split(".breezy.hr")[0].split(".")[-1]
+
+    # jobs.smartrecruiters.com/{tenant}/...
+    if "smartrecruiters.com" in host:
+        return path_parts[0] if path_parts else None
+
+    # apply.workable.com/{tenant}/...
+    if "workable.com" in host:
+        return path_parts[0] if path_parts else None
+
+    # jobs.ashbyhq.com/{tenant}/...
+    if "ashbyhq.com" in host:
+        return path_parts[0] if path_parts else None
+
+    return None
+
+
 def classify_source(url: str, company: str | None = None) -> tuple[str, int, str]:
     """Classify a URL into (source_type, trust_level, provenance_label).
     source_type is one of: "ats", "official", "aggregator", "unknown".
+
+    Official requires a strong company-domain relationship. Path alone (/jobs/)
+    never makes an unknown domain official.
     """
     host = extract_domain(url)
     if not host:
@@ -64,23 +126,39 @@ def classify_source(url: str, company: str | None = None) -> tuple[str, int, str
     # 3. Official company site heuristic
     if company:
         norm_company = normalize_text_for_match(company)
-        company_tokens = [t for t in norm_company.split() if t not in {"inc", "corp", "llc", "ltd", "gmbh", "co", "ai", "tech"}]
-        norm_host = re.sub(r"[^a-z0-9]", "", host.split(".")[0])
-        # Direct match or token match
-        if norm_company and (norm_company.replace(" ", "") in norm_host or norm_host in norm_company.replace(" ", "")):
-            return "official", 90, company.strip()
-        for token in company_tokens:
-            if len(token) >= 4 and token in host:
-                return "official", 85, company.strip()
+        company_tokens = [t for t in norm_company.split() if t not in LEGAL_SUFFIXES]
+        # Meaningful tokens excluding generic industry words
+        distinct_tokens = [t for t in company_tokens if t not in GENERIC_TOKENS and len(t) >= 3]
 
-    # Path check: careers/jobs
-    try:
-        path = urlsplit(url).path.lower()
-        if any(keyword in path for keyword in ["career", "careers", "job", "jobs", "apply"]):
-            return "official", 75, "Official Site"
-    except Exception:
-        pass
+        # Extract base domain label (e.g. openai from careers.openai.com or openai.com)
+        host_parts = host.lower().split(".")
+        base_label = host_parts[-2] if len(host_parts) >= 2 else host_parts[0]
 
+        is_official = False
+        trust_val = 85
+
+        # Direct match with company name or distinct company token
+        core_unified = "".join(company_tokens)
+        if core_unified and core_unified == base_label:
+            is_official = True
+            trust_val = 90
+        elif distinct_tokens:
+            for token in distinct_tokens:
+                if token == base_label or (len(token) >= 4 and f"{token}." in host):
+                    is_official = True
+                    trust_val = 90
+                    break
+
+        if is_official:
+            try:
+                path = urlsplit(url).path.lower()
+                if any(keyword in path for keyword in ["career", "careers", "job", "jobs", "apply"]) or "careers" in host or "jobs" in host:
+                    trust_val = 95
+            except Exception:
+                pass
+            return "official", trust_val, company.strip()
+
+    # Path check without company domain match is UNKNOWN (never official!)
     return "unknown", 30, host
 
 
@@ -113,25 +191,44 @@ def calculate_match_confidence(
     expected_company: str,
     extracted_company: str | None,
     source_type: str = "unknown",
+    url: str | None = None,
 ) -> str:
     """Calculate match confidence: 'high', 'medium', 'low', 'none'."""
     if not extracted_title:
         return "none"
 
     title_sim = compute_string_similarity(expected_title, extracted_title)
+    if title_sim < 0.40:
+        return "none"
 
     company_sim = 0.0
     if extracted_company:
         company_sim = compute_string_similarity(expected_company, extracted_company)
-    elif source_type in {"ats", "official"}:
-        company_sim = 0.8  # Bonus if found directly on official/ATS source
+    elif url:
+        tenant = extract_ats_tenant(url)
+        if tenant:
+            tenant_sim = compute_string_similarity(expected_company, tenant)
+            if tenant_sim >= 0.60:
+                company_sim = tenant_sim
+        elif source_type == "official":
+            company_sim = 0.85
 
-    if title_sim >= 0.80 and company_sim >= 0.60:
+    # Wrong company: if extracted company is present and similarity is low, penalize
+    if extracted_company and company_sim < 0.35:
+        return "low" if title_sim >= 0.75 else "none"
+
+    # High confidence: requires high title AND verified company identity
+    if title_sim >= 0.75 and company_sim >= 0.60:
         return "high"
-    elif title_sim >= 0.70 or (title_sim >= 0.60 and source_type == "ats"):
-        return "high"
-    elif title_sim >= 0.55:
+
+    # High title match but missing/unverified company identity -> medium maximum!
+    if title_sim >= 0.70:
         return "medium"
-    elif title_sim >= 0.35:
+
+    if title_sim >= 0.55:
+        return "medium" if company_sim >= 0.50 else "low"
+
+    if title_sim >= 0.40:
         return "low"
+
     return "none"

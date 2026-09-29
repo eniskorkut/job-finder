@@ -221,6 +221,11 @@ class JobRepository(Repository[Job]):
         enrich_counts = {status: int(count) for status, count in enrich_rows}
         enriched_jobs = enrich_counts.get("enriched", 0)
         pending_enrichment = enrich_counts.get("pending", 0)
+        problematic_enrichment = (
+            enrich_counts.get("failed", 0)
+            + enrich_counts.get("search_unavailable", 0)
+            + enrich_counts.get("fetch_failed", 0)
+        )
 
         fresh_rows = self.db.execute(
             select(Job.freshness_status, func.count(Job.id))
@@ -256,6 +261,7 @@ class JobRepository(Repository[Job]):
             ),
             "enriched_jobs": enriched_jobs,
             "pending_enrichment": pending_enrichment,
+            "problematic_enrichment": problematic_enrichment,
             "fresh_jobs": fresh_jobs,
             "stale_jobs": stale_jobs,
             "expired_jobs": expired_jobs,

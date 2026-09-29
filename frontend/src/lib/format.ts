@@ -151,14 +151,22 @@ export const enrichmentLabels: Record<string, string> = {
   pending: "Zenginleştirme bekliyor",
   skipped: "Atlandı (Açıklama yeterli)",
   not_found: "Aday bulunamadı",
+  search_unavailable: "Web araması erişilemiyor",
+  search_disabled: "Web araması kapalı",
+  fetch_failed: "Kaynak indirilemedi",
+  insufficient: "Yetersiz içerik",
   failed: "Zenginleştirme hatası",
 };
 
-export const enrichmentVariants: Record<string, "accent" | "neutral" | "muted" | "danger"> = {
+export const enrichmentVariants: Record<string, "accent" | "neutral" | "muted" | "danger" | "warning"> = {
   enriched: "accent",
   pending: "neutral",
   skipped: "muted",
   not_found: "muted",
+  search_unavailable: "warning",
+  search_disabled: "muted",
+  fetch_failed: "warning",
+  insufficient: "muted",
   failed: "danger",
 };
 

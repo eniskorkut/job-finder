@@ -322,7 +322,13 @@ print(f"KILLED_PID:{killed_pid}")
             "-c",
             kill_script,
         ]
-        kill_out = run_cmd(cmd)
+        try:
+            kill_out = run_cmd(cmd)
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 137:
+                kill_out = exc.stdout.strip()
+            else:
+                raise
         print(f"SIGKILL sent to worker main process: {kill_out}")
 
         print("\n================================================================================")

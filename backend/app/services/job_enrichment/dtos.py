@@ -10,6 +10,18 @@ from app.services.job_enrichment.html_parser import ExtractedJobData
 
 
 @dataclass(slots=True)
+class ExistingWebSourceCache:
+    """Detached cache metadata for previously discovered web sources of a job."""
+    url: str
+    normalized_url: str
+    etag: str | None = None
+    last_modified: str | None = None
+    content_hash: str | None = None
+    selected_as_canonical: bool = False
+    http_status: int | None = None
+
+
+@dataclass(slots=True)
 class JobEnrichmentSnapshot:
     """Detached snapshot of a job posting taken before running network operations."""
     job_id: uuid.UUID
@@ -38,6 +50,7 @@ class JobEnrichmentSnapshot:
     work_mode: str = "unknown"
     location: str | None = None
     employment_type: str | None = None
+    existing_sources: list[ExistingWebSourceCache] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -73,6 +86,7 @@ class EnrichmentCandidate:
     content_hash: str | None
     etag: str | None = None
     last_modified: str | None = None
+    is_not_modified: bool = False
 
 
 @dataclass(slots=True)

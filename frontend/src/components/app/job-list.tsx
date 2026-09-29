@@ -307,6 +307,9 @@ export function JobList({
               <option value="pending">Zenginleştirme bekleyenler</option>
               <option value="skipped">Atlananlar (Yeterli açıklama)</option>
               <option value="not_found">Kaynak bulunamayanlar</option>
+              <option value="search_unavailable">Arama erişilemeyenler</option>
+              <option value="search_disabled">Arama kapalı olanlar</option>
+              <option value="fetch_failed">İndirme hatası alanlar</option>
               <option value="failed">Hata verenler</option>
             </Select>
             <Select

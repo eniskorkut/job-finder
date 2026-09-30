@@ -36,6 +36,7 @@ class ExtractedJobData:
     work_mode: str | None = None
     application_url: str | None = None
     source_type: str = "none"  # "json_ld" | "semantic_html" | "none"
+    parser_source: str = "unknown"  # "json_ld" | "semantic_html" | "unknown"
     is_closed: bool = False
     raw_json_ld: dict | None = None
 
@@ -249,6 +250,7 @@ def extract_from_json_ld(
         work_mode=work_mode,
         application_url=application_url,
         source_type="json_ld",
+        parser_source="json_ld",
         is_closed=is_closed,
         raw_json_ld=jp,
     )
@@ -365,6 +367,7 @@ def extract_from_semantic_html(html: str) -> ExtractedJobData | None:
         work_mode=work_mode,
         application_url=None,
         source_type="semantic_html",
+        parser_source="semantic_html",
         is_closed=is_closed,
         raw_json_ld=None,
     )

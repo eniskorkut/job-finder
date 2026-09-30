@@ -80,11 +80,14 @@ from app.services.job_enrichment.url_utils import (
     normalize_url,
 )
 from scripts.live_job_discovery_smoke import (
+    AcceptanceVerdict,
     InstrumentedTestFetcher,
     InstrumentedTestSearchProvider,
     TargetMetrics,
+    evaluate_acceptance,
     evaluate_single_target,
 )
+from app.services.job_enrichment.freshness import calculate_freshness, evaluate_posted_at
 
 
 # ===========================================================================
@@ -103,12 +106,9 @@ def test_1_discovery_success_requires_enriched_status() -> None:
     metrics.found_semantic_signals = ["ai", "engineer"]
     metrics.enrichment_status = "not_found"  # NOT enriched
 
-    # Simulating criteria checking
-    reasons = []
-    if metrics.enrichment_status != "enriched":
-        reasons.append(f"Enrichment status is '{metrics.enrichment_status}'. Expected 'enriched'.")
-    assert len(reasons) > 0
-    assert "Expected 'enriched'" in reasons[0]
+    verdict = evaluate_acceptance(metrics)
+    assert verdict.verdict != "PASS"
+    assert any("Expected 'enriched'" in r for r in verdict.reasons)
 
 
 def test_2_web_fetch_without_valid_job_is_not_success() -> None:
@@ -120,31 +120,26 @@ def test_2_web_fetch_without_valid_job_is_not_success() -> None:
     metrics.description_length = 50
     metrics.enrichment_status = "not_found"
 
-    reasons = []
-    if metrics.source_confidence not in {"high", "medium"}:
-        reasons.append("Insufficient confidence")
-    if metrics.description_length < 300:
-        reasons.append("Description too short")
-    if metrics.enrichment_status != "enriched":
-        reasons.append("Not enriched")
-
-    assert len(reasons) >= 3
+    verdict = evaluate_acceptance(metrics)
+    assert verdict.verdict == "FAIL"
+    assert any("insufficient" in r.lower() for r in verdict.reasons)
+    assert any("too short" in r.lower() for r in verdict.reasons)
 
 
 def test_3_description_below_300_characters_is_not_success() -> None:
     """Scenario 3: Description below 300 characters is not success."""
     metrics = TargetMetrics(company="Acme Corp", title="AI Engineer")
+    metrics.search_result_count = 3
+    metrics.web_fetch_count = 1
     metrics.enrichment_status = "enriched"
     metrics.selected_source_url = "https://job-boards.greenhouse.io/acme/jobs/1"
     metrics.source_confidence = "high"
     metrics.description_length = 299  # Below threshold
+    metrics.found_semantic_signals = ["ai", "engineer"]
 
-    reasons = []
-    if metrics.description_length < 300:
-        reasons.append(f"Extracted description is too short ({metrics.description_length} chars < 300).")
-
-    assert len(reasons) == 1
-    assert "Extracted description is too short" in reasons[0]
+    verdict = evaluate_acceptance(metrics)
+    assert verdict.verdict != "PASS"
+    assert any("too short" in r for r in verdict.reasons)
 
 
 def test_4_wrong_company_is_rejected() -> None:
@@ -176,15 +171,17 @@ def test_5_wrong_title_is_rejected() -> None:
 def test_8_missing_canonical_url_is_not_success() -> None:
     """Scenario 8: Missing canonical URL is not success."""
     metrics = TargetMetrics(company="Acme", title="Engineer")
+    metrics.search_result_count = 1
+    metrics.web_fetch_count = 1
     metrics.enrichment_status = "enriched"
     metrics.selected_source_url = None
+    metrics.source_confidence = "high"
+    metrics.description_length = 800
+    metrics.found_semantic_signals = ["engineer", "software"]
 
-    reasons = []
-    if not metrics.selected_source_url:
-        reasons.append("No canonical URL was selected.")
-
-    assert len(reasons) == 1
-    assert "No canonical URL was selected." in reasons[0]
+    verdict = evaluate_acceptance(metrics)
+    assert verdict.verdict != "PASS"
+    assert any("No canonical URL was selected." in r for r in verdict.reasons)
 
 
 # ===========================================================================
@@ -389,6 +386,287 @@ async def test_15_http_clients_close_after_exception() -> None:
 
     mock_client.aclose.assert_awaited_once()
     assert fetcher._client is None
+
+
+@pytest.mark.asyncio
+async def test_http_clients_close_after_search_timeout() -> None:
+    """HTTP client lifecycle: Provider closes cleanly after search timeout."""
+    from app.integrations.web_search.searxng import SearXNGSearchProvider
+    provider = SearXNGSearchProvider(base_url="http://localhost:8080", timeout_seconds=0.01)
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("Search timeout"))
+    mock_client.is_closed = False
+    provider._client = mock_client
+
+    try:
+        with pytest.raises(SearchUnavailableError):
+            await provider.search("python developer")
+    finally:
+        await provider.close()
+
+    mock_client.aclose.assert_awaited_once()
+    assert provider._client is None
+
+
+@pytest.mark.asyncio
+async def test_http_clients_close_after_fetch_timeout() -> None:
+    """HTTP client lifecycle: Fetcher closes cleanly after fetch timeout."""
+    fetcher = SafeWebFetcher(timeout_seconds=0.01, retry_max_attempts=1)
+
+    class MockStreamCM:
+        async def __aenter__(self):
+            raise httpx.TimeoutException("Fetch timeout")
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=MockStreamCM())
+    mock_client.is_closed = False
+    fetcher._client = mock_client
+
+    with patch("app.integrations.web_fetch.fetcher.validate_url_for_ssrf", AsyncMock()):
+        try:
+            with pytest.raises(WebFetchError):
+                await fetcher.fetch("https://jobs.greenhouse.io/acme/123")
+        finally:
+            await fetcher.close()
+
+    mock_client.aclose.assert_awaited_once()
+    assert fetcher._client is None
+
+
+@pytest.mark.asyncio
+async def test_http_clients_close_after_parser_exception() -> None:
+    """HTTP client lifecycle: Resources are closed even if parser throws an unexpected error."""
+    fetcher = SafeWebFetcher()
+    mock_client = AsyncMock()
+    mock_client.is_closed = False
+    fetcher._client = mock_client
+
+    try:
+        with pytest.raises(RuntimeError):
+            with patch("app.services.job_enrichment.html_parser.extract_job_posting", side_effect=RuntimeError("Corrupt DOM tree")):
+                from app.services.job_enrichment.html_parser import extract_job_posting
+                extract_job_posting("<html><body>bad</body></html>")
+    finally:
+        await fetcher.close()
+
+    mock_client.aclose.assert_awaited_once()
+    assert fetcher._client is None
+
+
+@pytest.mark.asyncio
+async def test_http_clients_close_after_db_exception(db: Session) -> None:
+    """HTTP client lifecycle: Resources are closed even if DB operation fails."""
+    fetcher = SafeWebFetcher()
+    mock_client = AsyncMock()
+    mock_client.is_closed = False
+    fetcher._client = mock_client
+
+    try:
+        with pytest.raises(Exception):
+            # Simulate DB failure during workflow
+            raise RuntimeError("Database connection lost")
+    finally:
+        await fetcher.close()
+
+    mock_client.aclose.assert_awaited_once()
+    assert fetcher._client is None
+
+
+@pytest.mark.asyncio
+async def test_http_clients_close_after_task_cancellation() -> None:
+    """HTTP client lifecycle: Resources close when an async task is cancelled."""
+    fetcher = SafeWebFetcher()
+    mock_client = AsyncMock()
+    mock_client.is_closed = False
+    fetcher._client = mock_client
+
+    async def long_running_work() -> None:
+        try:
+            await asyncio.sleep(10)
+        finally:
+            await fetcher.close()
+
+    task = asyncio.create_task(long_running_work())
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    mock_client.aclose.assert_awaited_once()
+    assert fetcher._client is None
+
+
+@pytest.mark.asyncio
+async def test_http_connection_pooling_and_session_reuse() -> None:
+    """HTTP client lifecycle: Reuses client connection pool for multiple sequential calls."""
+    fetcher = SafeWebFetcher()
+    client1 = await fetcher._get_client()
+    client2 = await fetcher._get_client()
+    assert client1 is client2
+    await fetcher.close()
+    assert fetcher._client is None
+
+
+# ===========================================================================
+# Section 5b: Parser Source Tracking & Semantic Extraction Verification
+# ===========================================================================
+
+def test_parser_source_greenhouse_json_ld() -> None:
+    """Parser source verification: Greenhouse with valid schema.org JobPosting."""
+    html = """
+    <html><head>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "JobPosting",
+      "title": "Software Engineer",
+      "description": "Greenhouse JSON-LD detailed description exceeding minimum length criteria with responsibilities.",
+      "hiringOrganization": {"name": "GreenhouseCo"},
+      "datePosted": "2026-03-01T00:00:00Z"
+    }
+    </script>
+    </head><body>Content</body></html>
+    """
+    extracted = extract_job_posting(html, expected_company="GreenhouseCo", expected_title="Software Engineer")
+    assert extracted is not None
+    assert extracted.parser_source == "json_ld"
+    assert extracted.source_type == "json_ld"
+
+
+def test_parser_source_greenhouse_semantic_html() -> None:
+    """Parser source verification: Greenhouse fallback via semantic HTML parsing."""
+    html = """
+    <html><head><title>Senior Software Engineer at GreenhouseCo</title>
+    <meta property="og:description" content="Meta description content">
+    </head><body>
+    <h1>Senior Software Engineer</h1>
+    <main id="content">
+    <p>This is the full job description rendered via standard semantic HTML tags without schema markup.</p>
+    </main></body></html>
+    """
+    extracted = extract_job_posting(html, expected_company="GreenhouseCo", expected_title="Senior Software Engineer")
+    assert extracted is not None
+    assert extracted.parser_source == "semantic_html"
+    assert extracted.source_type == "semantic_html"
+
+
+def test_parser_source_ashby_json_ld() -> None:
+    """Parser source verification: Ashby with valid schema.org JobPosting."""
+    html = """
+    <html><head>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "JobPosting",
+      "title": "Backend Engineer",
+      "description": "Ashby JSON-LD full description with responsibilities and requirements.",
+      "hiringOrganization": {"name": "Synthesia"},
+      "datePosted": "2026-03-10T12:00:00Z"
+    }
+    </script>
+    </head><body>Ashby Job Board</body></html>
+    """
+    extracted = extract_job_posting(html, expected_company="Synthesia", expected_title="Backend Engineer")
+    assert extracted is not None
+    assert extracted.parser_source == "json_ld"
+
+
+def test_parser_source_ashby_semantic_html_fallback() -> None:
+    """Parser source verification: Ashby fallback via semantic HTML."""
+    html = """
+    <html><head><title>Backend Engineer at Synthesia</title>
+    <meta name="description" content="Synthesia backend engineering job.">
+    </head><body>
+    <article class="ashby-job-posting">
+      <h2>Backend Engineer</h2>
+      <div class="description-section">
+        <p>Join Synthesia to build the future of AI video generation. We are looking for senior engineers.</p>
+      </div>
+    </article>
+    </body></html>
+    """
+    extracted = extract_from_semantic_html(html)
+    assert extracted is not None
+    assert extracted.parser_source == "semantic_html"
+
+
+# ===========================================================================
+# Section 5c: Freshness Evaluation with Deterministic UTC Clock
+# ===========================================================================
+
+def test_freshness_json_ld_date_eval() -> None:
+    """Freshness verification: JSON-LD date correctly parsed and marked fresh."""
+    fixed_now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    eval_res = evaluate_posted_at(
+        json_ld_date=datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc),
+        now=fixed_now,
+    )
+    assert eval_res.posted_at_source == "json_ld"
+    assert eval_res.posted_at_confidence == "high"
+    fresh_res = calculate_freshness(
+        effective_posted_at=eval_res.effective_posted_at,
+        now=fixed_now,
+    )
+    assert fresh_res.freshness_status == "fresh"
+
+
+def test_freshness_html_meta_date_eval() -> None:
+    """Freshness verification: HTML meta date correctly parsed and marked stale."""
+    fixed_now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    eval_res = evaluate_posted_at(
+        html_meta_date=datetime(2026, 3, 10, 12, 0, 0, tzinfo=timezone.utc),
+        now=fixed_now,
+    )
+    assert eval_res.posted_at_source == "html_meta"
+    assert eval_res.posted_at_confidence == "medium"
+    fresh_res = calculate_freshness(
+        effective_posted_at=eval_res.effective_posted_at,
+        now=fixed_now,
+    )
+    assert fresh_res.freshness_status == "stale"
+
+
+def test_freshness_email_date_fallback() -> None:
+    """Freshness verification: Fallback to email received date when publication date absent."""
+    fixed_now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    email_date = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    eval_res = evaluate_posted_at(
+        email_received_at=email_date,
+        now=fixed_now,
+    )
+    assert eval_res.posted_at_source == "email_date"
+    assert eval_res.posted_at_confidence == "low"
+    assert eval_res.effective_posted_at == email_date
+
+
+def test_freshness_discovered_at_fallback() -> None:
+    """Freshness verification: Fallback to discovered_at timestamp."""
+    fixed_now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    disc_date = datetime(2026, 3, 19, 12, 0, 0, tzinfo=timezone.utc)
+    eval_res = evaluate_posted_at(
+        discovered_at=disc_date,
+        now=fixed_now,
+    )
+    assert eval_res.posted_at_source == "discovery_date"
+    assert eval_res.posted_at_confidence == "low"
+    assert eval_res.effective_posted_at == disc_date
+
+
+def test_freshness_corrupted_or_future_date_fallback() -> None:
+    """Freshness verification: Corrupted / future dates are rejected in favor of fallback."""
+    fixed_now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    future_date = datetime(2099, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    disc_date = datetime(2026, 3, 19, 12, 0, 0, tzinfo=timezone.utc)
+    eval_res = evaluate_posted_at(
+        json_ld_date=future_date,
+        discovered_at=disc_date,
+        now=fixed_now,
+    )
+    assert eval_res.posted_at_source in {"discovery_date", "email_date"}
+    assert eval_res.effective_posted_at <= fixed_now
 
 
 # ===========================================================================

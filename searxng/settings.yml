@@ -1,0 +1,30 @@
+use_default_settings: true
+general:
+  debug: false
+  instance_name: "JobFinder-SearXNG"
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+server:
+  secret_key: "jobfinder-searxng-secret-key-32-chars-long!!"
+  limiter: false
+  image_proxy: false
+engines:
+  - name: bing
+    engine: bing
+    disabled: false
+  - name: qwant
+    engine: qwant
+    disabled: false
+  - name: google
+    engine: google
+    disabled: false
+  - name: duckduckgo
+    engine: duckduckgo
+    disabled: false
+  - name: yahoo
+    engine: yahoo
+    disabled: false

@@ -67,6 +67,7 @@ class DiscoveredWebSourceDTO:
     http_status: int | None
     content_hash: str | None
     selected_as_canonical: bool
+    parser_source: str = "unknown"
     etag: str | None = None
     last_modified: str | None = None
 
@@ -84,6 +85,7 @@ class EnrichmentCandidate:
     extracted_data: ExtractedJobData | None
     http_status: int | None
     content_hash: str | None
+    parser_source: str = "unknown"
     etag: str | None = None
     last_modified: str | None = None
     is_not_modified: bool = False
@@ -112,6 +114,7 @@ class JobEnrichmentResult:
     new_content_hash: str | None = None
     description_updated: bool = False
     discovered_sources: list[DiscoveredWebSourceDTO] = field(default_factory=list)
+    parser_source: str = "unknown"
     error_class: str | None = None
     error_message: str | None = None
     last_verified_at: datetime | None = None
@@ -128,5 +131,6 @@ class JobEnrichmentOutcome:
     availability_status: str
     canonical_url: str | None = None
     description_updated: bool = False
+    parser_source: str = "unknown"
     error_class: str | None = None
     error_message: str | None = None

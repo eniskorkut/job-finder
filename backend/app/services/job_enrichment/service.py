@@ -402,6 +402,7 @@ async def execute_enrichment_flow(
                 extracted_data=extracted,
                 http_status=fetch_res.status_code,
                 content_hash=c_hash,
+                parser_source=extracted.parser_source if extracted else "unknown",
                 etag=fetch_res.etag,
                 last_modified=fetch_res.last_modified,
                 is_not_modified=False,
@@ -468,6 +469,7 @@ async def execute_enrichment_flow(
                 http_status=c.http_status,
                 content_hash=c.content_hash,
                 selected_as_canonical=(best is not None and c.url == best.url),
+                parser_source=c.parser_source,
                 etag=c.etag,
                 last_modified=c.last_modified,
             )
@@ -504,6 +506,7 @@ async def execute_enrichment_flow(
                 new_content_hash=snapshot.content_hash,
                 description_updated=False,
                 discovered_sources=discovered_sources,
+                parser_source=best.parser_source,
                 last_verified_at=current_time,
                 last_enriched_at=current_time,
             )
@@ -511,8 +514,8 @@ async def execute_enrichment_flow(
         if best.extracted_data:
             extracted = best.extracted_data
             date_eval = evaluate_posted_at(
-                json_ld_date=extracted.date_posted,
-                html_meta_date=extracted.date_posted if extracted.source_type == "semantic_html" else None,
+                json_ld_date=extracted.date_posted if extracted.parser_source == "json_ld" else None,
+                html_meta_date=extracted.date_posted if extracted.parser_source == "semantic_html" else None,
                 email_received_at=email_received_at,
                 discovered_at=discovered_at,
                 now=current_time,
@@ -566,6 +569,7 @@ async def execute_enrichment_flow(
                 new_content_hash=new_hash,
                 description_updated=desc_updated,
                 discovered_sources=discovered_sources,
+                parser_source=best.parser_source,
                 last_verified_at=current_time,
                 last_enriched_at=current_time,
             )
@@ -638,6 +642,7 @@ async def execute_enrichment_flow(
         valid_through=snapshot.valid_through,
         description_updated=False,
         discovered_sources=discovered_sources,
+        parser_source="unknown",
         error_class=err_class,
         error_message=err_msg,
         last_verified_at=current_time,
@@ -802,6 +807,7 @@ def persist_result(
         availability_status=job.availability_status,
         canonical_url=job.canonical_url,
         description_updated=desc_updated,
+        parser_source=result.parser_source,
         error_class=result.error_class,
         error_message=result.error_message,
     )

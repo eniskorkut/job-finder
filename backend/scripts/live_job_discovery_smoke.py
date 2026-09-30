@@ -57,6 +57,12 @@ from app.services.job_enrichment.url_utils import is_linkedin_url
 
 
 @dataclass(slots=True)
+class AcceptanceVerdict:
+    verdict: str  # "PASS", "FAIL", "PARTIAL", "BLOCKED"
+    reasons: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class TargetMetrics:
     company: str
     title: str
@@ -75,11 +81,16 @@ class TargetMetrics:
     selected_source_type: str = "unknown"
     source_confidence: str = "none"
     description_length: int = 0
-    parser_source: str = "none"
+    parser_source: str = "unknown"
     http_status: int | None = None
     enrichment_status: str = "pending"
     freshness_status: str = "unknown"
     posted_at: str | None = None
+    posted_at_source: str | None = None
+    posted_at_confidence: str | None = None
+    email_received_at: str | None = None
+    discovered_at: str | None = None
+    effective_posted_at: str | None = None
     found_semantic_signals: list[str] = field(default_factory=list)
     fetched_urls: list[str] = field(default_factory=list)
 
@@ -132,6 +143,63 @@ class InstrumentedTestSearchProvider:
         await self._provider.close()
 
 
+def evaluate_acceptance(metrics: TargetMetrics) -> AcceptanceVerdict:
+    """Pure evaluation function that computes AcceptanceVerdict from TargetMetrics."""
+    reasons: list[str] = []
+
+    # Check for blocking search unavailability
+    if (
+        metrics.enrichment_status == EnrichmentStatus.SEARCH_UNAVAILABLE.value
+        or any("SearXNG unavailable" in r for r in metrics.failure_reasons)
+    ):
+        return AcceptanceVerdict(
+            verdict="BLOCKED",
+            reasons=list(metrics.failure_reasons) or ["Web arama sağlayıcısı (SearXNG) erişilemez durumda."],
+        )
+
+    if metrics.search_result_count == 0:
+        reasons.append("No search results found by SearXNG.")
+
+    if metrics.web_fetch_count == 0:
+        reasons.append("No candidate URLs were fetched.")
+
+    if metrics.linkedin_fetch_count > 0:
+        reasons.append(f"Prohibited LinkedIn fetch attempted ({metrics.linkedin_fetch_count} times)!")
+
+    if not metrics.selected_source_url:
+        reasons.append("No canonical URL was selected.")
+
+    if metrics.source_confidence not in {"high", "medium"}:
+        reasons.append(f"Source confidence is insufficient ({metrics.source_confidence}). Expected high or medium.")
+
+    if metrics.description_length < 300:
+        reasons.append(f"Extracted description is too short ({metrics.description_length} chars < 300).")
+
+    if metrics.enrichment_status != EnrichmentStatus.ENRICHED.value:
+        reasons.append(f"Enrichment status is '{metrics.enrichment_status}'. Expected 'enriched'.")
+
+    if len(metrics.found_semantic_signals) < 2:
+        reasons.append(f"Insufficient semantic signals in description: {metrics.found_semantic_signals}")
+
+    # Check tenant / company match
+    if metrics.selected_source_url:
+        tenant = extract_ats_tenant(metrics.selected_source_url)
+        tenant_sim = compute_string_similarity(metrics.company, tenant) if tenant else 0.0
+        source_type, trust, _ = classify_source(metrics.selected_source_url, metrics.company)
+        if trust < 85 and tenant_sim < 0.5:
+            reasons.append(f"Source URL '{metrics.selected_source_url}' is not a trusted ATS or company official domain.")
+
+    if not reasons:
+        return AcceptanceVerdict(verdict="PASS", reasons=[])
+    elif (
+        metrics.enrichment_status == EnrichmentStatus.ENRICHED.value
+        or metrics.description_length >= 300
+    ):
+        return AcceptanceVerdict(verdict="PARTIAL", reasons=reasons)
+    else:
+        return AcceptanceVerdict(verdict="FAIL", reasons=reasons)
+
+
 async def evaluate_single_target(
     company: str,
     title: str,
@@ -147,6 +215,7 @@ async def evaluate_single_target(
 
     engine = None
     raw_searxng = None
+    fetcher = None
 
     try:
         engine = create_engine(
@@ -196,9 +265,12 @@ async def evaluate_single_target(
             )
             outcome = await service.enrich_job(job_id, force=True)
             metrics.enrichment_status = outcome.enrichment_status
+            metrics.parser_source = outcome.parser_source
         except SearchUnavailableError as exc:
-            metrics.verdict = "BLOCKED"
+            metrics.enrichment_status = EnrichmentStatus.SEARCH_UNAVAILABLE.value
             metrics.failure_reasons.append(f"SearXNG unavailable: {exc}")
+            verdict = evaluate_acceptance(metrics)
+            metrics.verdict = verdict.verdict
             return metrics
         except Exception as exc:
             metrics.verdict = "FAIL"
@@ -218,70 +290,41 @@ async def evaluate_single_target(
             metrics.selected_source_url = enriched_job.canonical_url or (web_sources[0].url if web_sources else None)
             metrics.freshness_status = enriched_job.freshness_status or "unknown"
             metrics.posted_at = enriched_job.posted_at.isoformat() if enriched_job.posted_at else None
+            metrics.posted_at_source = enriched_job.posted_at_source
+            metrics.posted_at_confidence = enriched_job.posted_at_confidence
+            metrics.email_received_at = enriched_job.email_received_at.isoformat() if enriched_job.email_received_at else None
+            metrics.discovered_at = enriched_job.discovered_at.isoformat() if enriched_job.discovered_at else None
+            metrics.effective_posted_at = enriched_job.posted_at.isoformat() if enriched_job.posted_at else None
 
         if web_sources:
             selected = next((s for s in web_sources if s.selected_as_canonical), web_sources[0])
             metrics.selected_source_type = selected.source_type
             metrics.source_confidence = selected.match_confidence
             metrics.http_status = selected.http_status
-            if selected.source_type == "json_ld":
-                metrics.parser_source = "json_ld"
-            elif selected.source_type in {"ats", "official"}:
-                metrics.parser_source = "semantic_html"
-            else:
-                metrics.parser_source = selected.source_type
+            if metrics.parser_source == "unknown":
+                if selected.source_type == "json_ld":
+                    metrics.parser_source = "json_ld"
+                elif selected.source_type in {"ats", "official"}:
+                    metrics.parser_source = "semantic_html"
 
         # Semantic signal checking
         semantic_keywords = ["ai", "engineer", "software", "python", "machine learning", "data", "model", "llm", "developer", "cloud", "aws"]
         desc_lower = (enriched_job.description or "").lower() if enriched_job else ""
         metrics.found_semantic_signals = [k for k in semantic_keywords if k in desc_lower]
 
-        # 6. Apply Strict PASS / FAIL Criteria
-        reasons: list[str] = []
-
-        if metrics.search_result_count == 0:
-            reasons.append("No search results found by SearXNG.")
-
-        if metrics.web_fetch_count == 0:
-            reasons.append("No candidate URLs were fetched.")
-
-        if metrics.linkedin_fetch_count > 0:
-            reasons.append(f"Prohibited LinkedIn fetch attempted ({metrics.linkedin_fetch_count} times)!")
-
-        if not metrics.selected_source_url:
-            reasons.append("No canonical URL was selected.")
-
-        if metrics.source_confidence not in {"high", "medium"}:
-            reasons.append(f"Source confidence is insufficient ({metrics.source_confidence}). Expected high or medium.")
-
-        if metrics.description_length < 300:
-            reasons.append(f"Extracted description is too short ({metrics.description_length} chars < 300).")
-
-        if metrics.enrichment_status != "enriched":
-            reasons.append(f"Enrichment status is '{metrics.enrichment_status}'. Expected 'enriched'.")
-
-        if len(metrics.found_semantic_signals) < 2:
-            reasons.append(f"Insufficient semantic signals in description: {metrics.found_semantic_signals}")
-
-        # Check tenant / company match
-        if metrics.selected_source_url:
-            tenant = extract_ats_tenant(metrics.selected_source_url)
-            tenant_sim = compute_string_similarity(company, tenant) if tenant else 0.0
-            source_type, trust, _ = classify_source(metrics.selected_source_url, company)
-            if trust < 85 and tenant_sim < 0.5:
-                reasons.append(f"Source URL '{metrics.selected_source_url}' is not a trusted ATS or company official domain.")
-
-        metrics.failure_reasons = reasons
-
-        if not reasons:
-            metrics.verdict = "PASS"
-        elif metrics.enrichment_status == "enriched" or metrics.description_length >= 300:
-            metrics.verdict = "PARTIAL"
-        else:
-            metrics.verdict = "FAIL"
+        # 6. Apply Strict PASS / FAIL Criteria via Pure Function
+        verdict = evaluate_acceptance(metrics)
+        metrics.verdict = verdict.verdict
+        metrics.failure_reasons = verdict.reasons
 
     finally:
         # Proper resource lifecycle cleanup
+        if fetcher:
+            try:
+                await fetcher.close()
+            except Exception:
+                pass
+
         if raw_searxng:
             try:
                 await raw_searxng.close()
@@ -322,14 +365,19 @@ async def run_acceptance_suite(searxng_url: str = "http://localhost:8080") -> li
         print(f"[{idx}/{len(targets)}] Evaluating: {company} - {title}...")
         metric = await evaluate_single_target(company, title, searxng_url=searxng_url)
         results.append(metric)
-        status_color = "\033[92m" if metric.verdict == "PASS" else "\033[91m"
+        status_color = "\033[92m" if metric.verdict == "PASS" else ("\033[93m" if metric.verdict == "PARTIAL" else "\033[91m")
         reset_color = "\033[0m"
         print(f"   -> Result: {status_color}{metric.verdict}{reset_color} ({metric.elapsed_ms}ms)")
         if metric.selected_source_url:
-            print(f"      Canonical URL: {metric.selected_source_url}")
-        print(f"      Description:   {metric.description_length} chars, Signals: {metric.found_semantic_signals}")
+            print(f"      Canonical URL:    {metric.selected_source_url}")
+        print(f"      Description:      {metric.description_length} chars, Signals: {metric.found_semantic_signals}")
+        print(f"      Parser Source:    {metric.parser_source}")
+        if metric.posted_at_source in {"json_ld", "html_meta"} and metric.posted_at:
+            print(f"      Publication Date: {metric.posted_at} (Source: {metric.posted_at_source}, Confidence: {metric.posted_at_confidence})")
+        else:
+            print(f"      Publication Date: Unknown (Effective: {metric.effective_posted_at or metric.posted_at}, Source: {metric.posted_at_source or 'none'})")
         if metric.failure_reasons:
-            print(f"      Reasons:       {'; '.join(metric.failure_reasons)}")
+            print(f"      Reasons:          {'; '.join(metric.failure_reasons)}")
         print()
         if idx < len(targets):
             await asyncio.sleep(2)
@@ -338,19 +386,20 @@ async def run_acceptance_suite(searxng_url: str = "http://localhost:8080") -> li
 
 
 def print_summary_table(results: list[TargetMetrics]) -> None:
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 105)
     print("REAL WORLD ACCEPTANCE TEST SUMMARY REPORT")
-    print("=" * 90)
-    header = f"{'Company':<20} | {'Title':<20} | {'Verdict':<8} | {'Conf':<6} | {'Desc Len':<9} | {'Latency':<8} | {'Canonical URL':<30}"
+    print("=" * 105)
+    header = f"{'Company':<18} | {'Title':<18} | {'Verdict':<7} | {'Conf':<6} | {'Parser':<12} | {'Date Src':<10} | {'Desc Len':<8} | {'Latency':<7} | {'Canonical URL':<20}"
     print(header)
-    print("-" * 90)
+    print("-" * 105)
     for r in results:
-        url_snippet = (r.selected_source_url or "None")[:28]
-        if r.selected_source_url and len(r.selected_source_url) > 28:
+        url_snippet = (r.selected_source_url or "None")[:18]
+        if r.selected_source_url and len(r.selected_source_url) > 18:
             url_snippet += ".."
-        line = f"{r.company:<20} | {r.title:<20} | {r.verdict:<8} | {r.source_confidence:<6} | {r.description_length:<9} | {r.elapsed_ms:<6}ms | {url_snippet:<30}"
+        date_src = r.posted_at_source or "unknown"
+        line = f"{r.company:<18} | {r.title:<18} | {r.verdict:<7} | {r.source_confidence:<6} | {r.parser_source:<12} | {date_src:<10} | {r.description_length:<8} | {r.elapsed_ms:<6}ms | {url_snippet:<20}"
         print(line)
-    print("=" * 90)
+    print("=" * 105)
 
     pass_count = sum(1 for r in results if r.verdict == "PASS")
     print(f"\nFinal Result: {pass_count}/{len(results)} targets PASSED.")

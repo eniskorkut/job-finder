@@ -143,11 +143,11 @@ Frontend Docker'a dahil edilmez; `localhost:3000` üzerinde geliştirme sunucusu
                              │ success
                   ┌──────────┴──────────┐
                   │                     │
-          ┌───────▼───────┐     ┌──────▼────────┐
-          │ backend-api   │     │ backend-worker │
-          │ FastAPI       │     │ queue/scheduler│
-          │ :8000         │     │ async jobs     │
-          └───────────────┘     └───────────────┘
+          ┌───────▼───────┐     ┌──────▼────────┐       ┌───────────────┐
+          │ backend-api   │     │ backend-worker │ ───→  │ searxng       │
+          │ FastAPI       │     │ queue/scheduler│       │ JSON Meta-API │
+          │ :8000         │     │ async jobs     │       │ :8080         │
+          └───────────────┘     └───────────────┘       └───────────────┘
                   │                     │
                   └──────────┬──────────┘
                              │
@@ -157,13 +157,14 @@ Frontend Docker'a dahil edilmez; `localhost:3000` üzerinde geliştirme sunucusu
 ```
 
 - **backend-migrate**: Container ayağa kalktığında `alembic upgrade head` çalıştırır ve başarıyla tamamlanınca çıkar. API ve worker bu servisin başarıyla bitmesini bekler (`condition: service_completed_successfully`).
+- **searxng**: Birinci sınıf servis olarak entegre edilmiş meta-arama motoru. `./searxng:/etc/searxng:ro` yapılandırmasını bağlar, JSON API çıktısı sağlar ve sağlık kontrolü barındırır. Worker için yumuşak bağımlılıktır (soft dependency; searxng geçici kapalı olsa bile worker çökmez). Port `127.0.0.1:8080` ile host'a açılır.
 - **backend-api**: FastAPI uygulamasını tek Uvicorn process içinde (SQLite ve in-memory rate-limiter uyumu için) çalıştırır. Port `8000:8000` host'a yönlendirilir.
-- **backend-worker**: E-posta tarama, DeepSeek skorlama, Telegram bildirimleri ve zamanlayıcıyı tek async process içinde yürütür.
+- **backend-worker**: E-posta tarama, SearXNG web keşfi, ilan zenginleştirme, DeepSeek skorlama, Telegram bildirimleri ve zamanlayıcıyı tek async process içinde yürütür.
 - **Persistent Data**: `job_finder_data` named volume `/app/data` dizinine bağlanır; SQLite veritabanı, WAL günlükleri ve CV dosyaları container recreate edilse bile korunur.
 
 ### Çalıştırma
 
-Backend (Docker):
+Backend (Docker - API, Worker ve SearXNG):
 ```bash
 docker compose -f compose.backend.yml up -d --build
 ```
@@ -185,6 +186,7 @@ Beklenen durum:
 - `job-finder-backend-migrate-1`: `Exited (0)`
 - `job-finder-backend-api-1`: `Up (healthy)`
 - `job-finder-backend-worker-1`: `Up`
+- `job-finder-searxng`: `Up (healthy)`
 
 Logları canlı izleme:
 ```bash
@@ -752,37 +754,48 @@ Açıklama yeterli mi? (kelime sayısı ≥ 120 veya ok)
 
 Sistemin gerçek internet üzerinde, hiçbir sahte veri veya mock kullanmaksızın, canlı arama motoru (SearXNG) ve resmi ATS kaynakları (Greenhouse, Ashby vb.) üzerinden iş ilanlarını bulup tam metinlerini çıkarabilmesi sıkı kriterlerle doğrulanmıştır.
 
-#### 1) SearXNG Kurulumu ve Çalıştırılması
+#### 1) Kalıcı SearXNG Servisi ve Yapılandırması
 
-Web araması için SearXNG Docker konteyneri kullanılır:
+Web araması için SearXNG, projenin kalıcı birinci sınıf bir Docker servisi olarak `compose.backend.yml` içine entegre edilmiştir:
 
+- Yapılandırma dosyası: `./searxng/settings.yml` (`/etc/searxng:ro` olarak bağlanır)
+- JSON API formatı ve Bing, DuckDuckGo, Qwant, Google, Yahoo motorları etkindir.
+- Port: `127.0.0.1:8080:8080` (Host ve worker erişimi)
+- Sağlık kontrolü (healthcheck): `python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/search?q=test&format=json')"`
+- Worker ve API için yumuşak bağımlılık (soft dependency): SearXNG kapalı olsa dahi worker çökmez; arama yapılamadığında `search_unavailable` durumu kaydedilir ve sistem çalışmaya devam eder.
+
+Ayağa kaldırma:
 ```bash
-docker run -d \
-  --name searxng-live \
-  -p 8080:8080 \
-  -v /tmp/searxng:/etc/searxng \
-  -e "SEARXNG_BASE_URL=http://localhost:8080/" \
-  searxng/searxng:latest
+docker compose -f compose.backend.yml up -d
 ```
 
-`/tmp/searxng/settings.yml` yapılandırmasında Bing, DuckDuckGo, Qwant, Yahoo ve Google motorları etkinleştirilmiştir.
+#### 2) Ayrıştırma Mekanizması ve Tarih Ayrımı (Parser Source & Date Provenance)
 
-#### 2) Canlı Kabul Testi Çalıştırma
+- **Alan Adı Güveni (`source_type`):** Kaynağın alan adı seviyesindeki güvenini ifade eder (`ats`, `official`, `linkedin`, `mail`).
+- **Ayrıştırma Mekanizması (`parser_source`):** İlan metninin ve alanlarının hangi yöntemle çıkarıldığını belirtir:
+  - `json_ld`: Sayfadaki yapılandırılmış Schema.org `JobPosting` verisinden doğrudan çekildi.
+  - `semantic_html`: JSON-LD bulunamadığında güvenli semantic HTML (`<main>`, `<article>`, heading ve paragraflar) ayrıştırmasından çekildi.
+  - `unknown`: Ayrıştırma henüz tamamlanmadı veya başarısız.
+- **Tarih Ayrımı (`posted_at_source` vs `effective_posted_at`):**
+  - Gerçek yayınlanma tarihi (`json_ld`, `html_meta`): Sayfanın bizzat ilan ettiği yayınlanma tarihi.
+  - Yedek tarih (`discovery_date`, `email_date`): Sayfada gerçek yayınlanma tarihi yer almadığında tazelik hesaplaması için kullanılan keşif veya e-posta tarihi. Bu durumda gerçek yayınlanma tarihi **Bilinmiyor** (Unknown) olarak raporlanır.
+
+#### 3) Canlı Kabul Testi Çalıştırma
 
 Tüm canlı hedefleri bağımsız geçici veritabanlarında çalıştırmak için:
 
 ```bash
 cd backend
-PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --all-targets
+PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --all-targets --searxng-url http://localhost:8080
 ```
 
 Tekil hedef testi için:
 
 ```bash
-PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --company "Impiricus" --title "AI Engineer"
+PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --company "Impiricus" --title "AI Engineer" --searxng-url http://localhost:8080
 ```
 
-#### 3) Değerlendirme Kriterleri (PASS / FAIL / PARTIAL / BLOCKED)
+#### 4) Değerlendirme Kriterleri (PASS / FAIL / PARTIAL / BLOCKED)
 
 | Kriter | Beklenen Koşul | Açıklama |
 | --- | --- | --- |
@@ -802,17 +815,17 @@ PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --company "Imp
 - **FAIL:** Yanlış şirket/unvan, boş içerik veya yetersiz açıklama boyutu.
 - **BLOCKED:** SearXNG'ye veya ağa ulaşılamaması durumu (`SearchUnavailableError`).
 
-#### 4) Canlı İnternet Test Sonuçları (3 Hedef Şirket)
+#### 5) Canlı İnternet Test Sonuçları (3 Hedef Şirket)
 
-| Şirket | Aranan Unvan | Sonuç | Güven | Metin Uzunluğu | Süre | Seçilen Kanonik URL |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Impiricus** | AI Engineer | **PASS** | `high` | 7,602 karakter | 5,097 ms | `https://job-boards.greenhouse.io/impiricus/jobs/5427769008` |
-| **Cadence Solutions** | AI Engineer | **PASS** | `high` | 7,182 karakter | 4,771 ms | `https://job-boards.greenhouse.io/solutions/jobs/4680769006` |
-| **Synthesia** | Backend Engineer | **PASS** | `high` | 6,283 karakter | 4,012 ms | `https://jobs.ashbyhq.com/synthesia/83052182-d2b9-40d5-bd87-d400e7786a9a` |
+| Şirket | Aranan Unvan | Sonuç | Güven | Parser | Tarih Kaynağı | Metin Uzunluğu | Süre | Seçilen Kanonik URL |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **Impiricus** | AI Engineer | **PASS** | `high` | `semantic_html` | `discovery_date` (Yayın: Bilinmiyor) | 7,602 kar. | 4,487 ms | `https://job-boards.greenhouse.io/impiricus/jobs/5427769008` |
+| **Cadence Solutions** | AI Engineer | **PASS** | `high` | `semantic_html` | `discovery_date` (Yayın: Bilinmiyor) | 7,182 kar. | 9,176 ms | `https://job-boards.greenhouse.io/solutions/jobs/4680769006` |
+| **Synthesia** | Backend Engineer | **PASS** | `high` | `json_ld` | `json_ld` (2026-09-28) | 6,283 kar. | 8,492 ms | `https://jobs.ashbyhq.com/synthesia/83052182-d2b9-40d5-bd87-d400e7786a9a` |
 
 - **Sonuç:** 3/3 canlı hedef (%100) tüm sıkı kriterleri sağlayarak **PASS** almıştır.
 
-#### 5) Geçici Veritabanı ve Kaynak Yaşam Döngüsü Mimarisi
+#### 6) Geçici Veritabanı ve Kaynak Yaşam Döngüsü Mimarisi
 
 - Her test hedefi için `tempfile.mkdtemp(prefix="jobhunter_live_...")` ile izole bir geçici dizin ve bağımsız SQLite dosyası oluşturulur.
 - Test tamamlandığında `finally` bloğunda SQLAlchemy engine bağlantı havuzu `engine.dispose()` ile boşaltılır ve `shutil.rmtree` ile geçici dosyalar sistemden temizlenir.

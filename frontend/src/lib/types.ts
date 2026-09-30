@@ -238,6 +238,33 @@ export interface MailAccount {
   created_at: string;
 }
 
+export interface GuideStep {
+  step_number: number;
+  title: string;
+  description: string;
+  action_url?: string | null;
+  action_label?: string | null;
+  copyable_text?: string | null;
+  warning?: string | null;
+}
+
+export interface GuideFAQ {
+  question: string;
+  answer: string;
+}
+
+export interface GuideTroubleshooting {
+  error_code: string;
+  title: string;
+  cause: string;
+  solution: string;
+}
+
+export interface OfficialLink {
+  label: string;
+  url: string;
+}
+
 export interface OAuthClientConfig {
   provider: string;
   configured: boolean;
@@ -249,6 +276,12 @@ export interface OAuthClientConfig {
   title: string;
   steps: string[];
   notes: string[];
+  estimated_minutes?: number;
+  prerequisites?: string[];
+  structured_steps?: GuideStep[];
+  faq?: GuideFAQ[];
+  troubleshooting?: GuideTroubleshooting[];
+  official_links?: OfficialLink[];
   updated_at: string | null;
 }
 
@@ -283,6 +316,17 @@ export interface IntegrationsResponse {
     json_mode?: boolean;
     max_concurrency?: number;
     note: string;
+  };
+  web_search?: {
+    provider: string;
+    label?: string;
+    configured: boolean;
+    status: string;
+    url: string | null;
+    mode: string;
+    description: string;
+    max_concurrency?: number;
+    note?: string;
   };
 }
 

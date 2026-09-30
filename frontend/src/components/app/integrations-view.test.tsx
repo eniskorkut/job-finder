@@ -334,4 +334,73 @@ describe("IntegrationsView", () => {
       await screen.findByText("İlk kayıtta Client Secret zorunludur."),
     ).toBeInTheDocument();
   });
+
+  it("renders the security banner with expandable details", async () => {
+    const user = userEvent.setup();
+    renderWith();
+
+    expect(
+      await screen.findByText("Bağlantılarınız ve Verileriniz Nasıl Korunuyor?"),
+    ).toBeInTheDocument();
+
+    const toggleBtn = screen.getByRole("button", { name: /Güvenlik ayrıntıları/i });
+    await user.click(toggleBtn);
+
+    expect(screen.getByText("Parola Paylaşımı Yok")).toBeInTheDocument();
+    expect(screen.getByText("Yalnızca Okuma İzni")).toBeInTheDocument();
+    expect(screen.getByText("Güçlü AES Şifreleme")).toBeInTheDocument();
+    expect(screen.getByText("Kullanıcı İzolasyonu")).toBeInTheDocument();
+  });
+
+  it("groups integrations into personal connections and server-managed sections including SearXNG", async () => {
+    renderWith({
+      web_search: {
+        provider: "searxng",
+        label: "SearXNG Web Araması (İş Keşfi & Zenginleştirme)",
+        configured: true,
+        status: "running",
+        url: "http://localhost:8080",
+        mode: "server_managed",
+        description: "İş ilanı zenginleştirme servisi",
+      },
+    });
+
+    expect(await screen.findByText("Kişisel Bağlantılar")).toBeInTheDocument();
+    expect(screen.getByText("Sunucu Tarafından Yönetilen Servisler")).toBeInTheDocument();
+    expect(screen.getAllByText("sunucu tarafından yönetilir").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("SearXNG Web Araması (İş Keşfi & Zenginleştirme)")).toBeInTheDocument();
+  });
+
+  it("toggles client secret visibility with the eye icon", async () => {
+    const user = userEvent.setup();
+    renderWith();
+
+    const card = within(await screen.findByTestId("integration-card-gmail"));
+    const secretInput = card.getByLabelText("Client Secret");
+    expect(secretInput).toHaveAttribute("type", "password");
+
+    const toggleButton = card.getByRole("button", { name: /Yazılanı göster/i });
+    await user.click(toggleButton);
+
+    expect(secretInput).toHaveAttribute("type", "text");
+
+    const hideButton = card.getByRole("button", { name: /Gizle/i });
+    await user.click(hideButton);
+
+    expect(secretInput).toHaveAttribute("type", "password");
+  });
+
+  it("toggles 'Bu nedir?' explanation popover", async () => {
+    const user = userEvent.setup();
+    renderWith();
+
+    const card = within(await screen.findByTestId("integration-card-gmail"));
+    const infoButtons = card.getAllByRole("button", { name: /Bu nedir\?/i });
+    expect(infoButtons.length).toBeGreaterThan(0);
+
+    await user.click(infoButtons[0]);
+    expect(
+      await card.findByText(/oluşturduğunuz Web uygulamasının/i),
+    ).toBeInTheDocument();
+  });
 });

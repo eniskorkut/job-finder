@@ -21,6 +21,33 @@ class MailAccountRead(ORMModel):
     created_at: datetime
 
 
+class GuideStepRead(BaseModel):
+    step_number: int
+    title: str
+    description: str
+    action_url: str | None = None
+    action_label: str | None = None
+    copyable_text: str | None = None
+    warning: str | None = None
+
+
+class GuideFAQRead(BaseModel):
+    question: str
+    answer: str
+
+
+class GuideTroubleshootingRead(BaseModel):
+    error_code: str
+    title: str
+    cause: str
+    solution: str
+
+
+class OfficialLinkRead(BaseModel):
+    label: str
+    url: str
+
+
 class OAuthClientRead(ORMModel):
     provider: str
     configured: bool
@@ -30,8 +57,14 @@ class OAuthClientRead(ORMModel):
     redirect_uri: str
     scopes: list[str]
     title: str
-    steps: list[str]
-    notes: list[str]
+    steps: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    estimated_minutes: int = 5
+    prerequisites: list[str] = Field(default_factory=list)
+    structured_steps: list[GuideStepRead] = Field(default_factory=list)
+    faq: list[GuideFAQRead] = Field(default_factory=list)
+    troubleshooting: list[GuideTroubleshootingRead] = Field(default_factory=list)
+    official_links: list[OfficialLinkRead] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 
@@ -107,6 +140,7 @@ class IntegrationRead(ORMModel):
 class IntegrationsResponse(ORMModel):
     integrations: list[IntegrationRead]
     deepseek: dict
+    web_search: dict = Field(default_factory=dict)
 
 
 class TelegramConfigRequest(BaseModel):

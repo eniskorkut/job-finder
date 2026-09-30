@@ -206,4 +206,57 @@ describe("TelegramCard", () => {
       ).toBe(true),
     );
   });
+
+  it("toggles bot token visibility with the eye icon", async () => {
+    const user = userEvent.setup();
+    renderWith(disconnected);
+
+    const tokenInput = await screen.findByLabelText("Bot token");
+    expect(tokenInput).toHaveAttribute("type", "password");
+
+    const toggleButton = screen.getByRole("button", { name: /Yazılanı göster/i });
+    await user.click(toggleButton);
+
+    expect(tokenInput).toHaveAttribute("type", "text");
+
+    const hideButton = screen.getByRole("button", { name: /Gizle/i });
+    await user.click(hideButton);
+
+    expect(tokenInput).toHaveAttribute("type", "password");
+  });
+
+  it("toggles 'Bu nedir?' explanation for token and chat id", async () => {
+    const user = userEvent.setup();
+    renderWith(disconnected);
+
+    const infoButtons = await screen.findAllByRole("button", { name: /Bu nedir\?/i });
+    expect(infoButtons.length).toBeGreaterThanOrEqual(2);
+
+    await user.click(infoButtons[0]);
+    expect(
+      screen.getByText(/BotFather tarafından oluşturulan gizli API belirtecidir/i),
+    ).toBeInTheDocument();
+
+    await user.click(infoButtons[1]);
+    expect(
+      screen.getByText(/Telegram hesabınızın sayısal benzersiz kimliğidir/i),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the onboarding guide steps and troubleshooting accordion", async () => {
+    const user = userEvent.setup();
+    renderWith(disconnected);
+
+    const guideToggle = screen.getByRole("button", { name: /Telegram Bot Kurulum Rehberi/i });
+    await user.click(guideToggle);
+
+    expect(screen.getByText(/@BotFather ile Yeni Bot Oluşturun/i)).toBeInTheDocument();
+    expect(screen.getByText(/BotFather'ı Aç/i)).toBeInTheDocument();
+
+    const faqToggle = screen.getByRole("button", { name: /Telegram Sorun Giderme ve SSS/i });
+    await user.click(faqToggle);
+
+    expect(screen.getByText(/\? Bot token geçersiz/i)).toBeInTheDocument();
+    expect(screen.getByText(/\? Sohbet bulunamadı/i)).toBeInTheDocument();
+  });
 });

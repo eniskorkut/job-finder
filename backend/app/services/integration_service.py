@@ -142,8 +142,8 @@ class IntegrationService:
         return items
 
     def _client_view(self, user: User, provider: str) -> OAuthClientRead | None:
+        guide = self.client_service.public_view(user, provider)
         if self.clients.get_for_user_provider(user.id, provider) is None:
-            guide = self.client_service.public_view(user, provider)
             return OAuthClientRead(
                 provider=provider,
                 configured=False,
@@ -152,8 +152,13 @@ class IntegrationService:
                 title=guide["title"],
                 steps=guide["steps"],
                 notes=guide["notes"],
+                estimated_minutes=guide.get("estimated_minutes", 5),
+                prerequisites=guide.get("prerequisites", []),
+                structured_steps=guide.get("structured_steps", []),
+                faq=guide.get("faq", []),
+                troubleshooting=guide.get("troubleshooting", []),
+                official_links=guide.get("official_links", []),
             )
-        guide = self.client_service.public_view(user, provider)
         updated_at = guide["updated_at"]
         return OAuthClientRead(
             provider=provider,
@@ -166,6 +171,12 @@ class IntegrationService:
             title=guide["title"],
             steps=guide["steps"],
             notes=guide["notes"],
+            estimated_minutes=guide.get("estimated_minutes", 5),
+            prerequisites=guide.get("prerequisites", []),
+            structured_steps=guide.get("structured_steps", []),
+            faq=guide.get("faq", []),
+            troubleshooting=guide.get("troubleshooting", []),
+            official_links=guide.get("official_links", []),
             updated_at=datetime.fromisoformat(updated_at) if updated_at else None,
         )
 
@@ -186,6 +197,25 @@ class IntegrationService:
             }
         )
         return summary
+
+    def web_search_summary(self) -> dict:
+        """Shared web discovery / SearXNG search status."""
+        is_configured = settings.web_search_provider in {"searxng", "mock"}
+        return {
+            "provider": settings.web_search_provider,
+            "label": "SearXNG Web Araması (İş Keşfi & Zenginleştirme)",
+            "configured": is_configured,
+            "status": "running" if is_configured else "disabled",
+            "url": settings.web_search_searxng_url if settings.web_search_provider == "searxng" else None,
+            "mode": "server_managed",
+            "description": (
+                "Kısa iş ilanlarının resmi şirket / ATS sayfalarından tam metnini ve tazelik "
+                "bilgisini bulmak için kullanılır. Yerel SearXNG Docker servisi üzerinden "
+                "sunucu tarafından yönetilir; kullanıcı API anahtarı gerekmez."
+            ),
+            "max_concurrency": settings.web_search_max_concurrency,
+            "note": "SearXNG yerel konteyner olarak sunucu tarafından yönetilir. Harici API anahtarı gerekmez.",
+        }
 
     # --- account maintenance -------------------------------------------
     def require_account(self, user: User, account_id: uuid.UUID) -> MailAccount:

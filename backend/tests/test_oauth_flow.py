@@ -98,6 +98,35 @@ class TestClientCredentials:
         assert account.status == ConnectionStatus.NEEDS_REAUTH.value
         assert "yeniden" in (account.last_error or "").lower()
 
+    def test_integrations_overview_includes_server_managed_web_search_and_rich_guides(
+        self, api_user1
+    ):
+        response = api_user1.get("/api/v1/integrations")
+        assert response.status_code == 200
+        body = response.json()
+        assert "deepseek" in body
+        assert "web_search" in body
+        assert body["web_search"]["provider"] in {"searxng", "mock", "none"}
+        assert body["web_search"]["mode"] == "server_managed"
+        assert "kullanıcı API anahtarı gerekmez" in body["web_search"]["description"]
+
+        gmail = next(i for i in body["integrations"] if i["provider"] == "gmail")
+        client = gmail["oauth_client"]
+        assert client["estimated_minutes"] == 5
+        assert len(client["structured_steps"]) >= 5
+        assert len(client["faq"]) >= 2
+        assert any("API Key" in f["question"] for f in client["faq"])
+        assert any(t["error_code"] == "redirect_uri_mismatch" for t in client["troubleshooting"])
+        assert any(l["label"] == "Google Cloud Console" for l in client["official_links"])
+
+    def test_saving_credentials_returns_rich_wizard_structure(self, api_user1):
+        body = save_gmail_client(api_user1)
+        assert body["configured"] is True
+        assert body["estimated_minutes"] == 5
+        assert len(body["structured_steps"]) >= 5
+        assert any("Google Cloud" in s["title"] for s in body["structured_steps"])
+        assert any(t["error_code"] == "redirect_uri_mismatch" for t in body["troubleshooting"])
+
     def test_unsupported_provider_is_rejected(self, api_user1):
         response = api_user1.put(
             "/api/v1/integrations/telegram/client",

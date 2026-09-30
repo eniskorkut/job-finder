@@ -39,7 +39,9 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 def list_integrations(user: CurrentUser, db: DbSession) -> IntegrationsResponse:
     service = IntegrationService(db)
     return IntegrationsResponse(
-        integrations=service.list(user), deepseek=service.deepseek_summary()
+        integrations=service.list(user),
+        deepseek=service.deepseek_summary(),
+        web_search=service.web_search_summary(),
     )
 
 
@@ -57,6 +59,12 @@ def _client_read(service: OAuthClientService, user, provider: str) -> OAuthClien
         title=view["title"],
         steps=view["steps"],
         notes=view["notes"],
+        estimated_minutes=view.get("estimated_minutes", 5),
+        prerequisites=view.get("prerequisites", []),
+        structured_steps=view.get("structured_steps", []),
+        faq=view.get("faq", []),
+        troubleshooting=view.get("troubleshooting", []),
+        official_links=view.get("official_links", []),
         updated_at=view["updated_at"],
     )
 

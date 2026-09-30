@@ -43,7 +43,7 @@ MAX_SECRET_LENGTH = 400
 
 PROVIDER_GUIDES: dict[str, dict[str, object]] = {
     Provider.GMAIL.value: {
-        "title": "Google Cloud - OAuth Web uygulaması",
+        "title": "Google Cloud - OAuth 2.0 Web Uygulaması",
         "redirect_uri": lambda: settings.gmail_redirect_uri,
         "scopes": ["https://www.googleapis.com/auth/gmail.readonly", "openid", "email"],
         "steps": [
@@ -55,12 +55,106 @@ PROVIDER_GUIDES: dict[str, dict[str, object]] = {
             "Client ID ve Client Secret değerlerini bu ekrandaki forma yapıştırın.",
         ],
         "notes": [
-            "Uygulama 'Testing' modundayken Google yenileme token'ı 7 gün sonra geçersiz olur; yeniden bağlanmanız gerekir.",
+            "Uygulama 'Testing' modundayken Google yenileme token'ı 7 gün sonra geçersiz olur; 'Yeniden yetkilendir' ile yenileyebilirsiniz.",
             "Yalnızca okuma izni (gmail.readonly) istenir; parolanız hiçbir zaman istenmez ve saklanmaz.",
+        ],
+        "estimated_minutes": 5,
+        "prerequisites": [
+            "Aktif bir Google / Gmail hesabı",
+            "Google Cloud Console erişimi (ücretsizdir, kredi kartı gerekmez)",
+        ],
+        "official_links": [
+            {"label": "Google Cloud Console", "url": "https://console.cloud.google.com"},
+            {"label": "Gmail API Dokümantasyonu", "url": "https://developers.google.com/gmail/api"},
+        ],
+        "structured_steps": [
+            {
+                "step_number": 1,
+                "title": "Google Cloud'da Yeni Proje Oluşturun",
+                "description": "Google Cloud Console'a gidin. Üst menüdeki proje seçiciye tıklayıp 'New Project' butonuna basarak 'Job Finder' adında bir proje oluşturun.",
+                "action_url": "https://console.cloud.google.com/projectcreate",
+                "action_label": "Proje Oluştur",
+                "warning": None,
+            },
+            {
+                "step_number": 2,
+                "title": "Gmail API'yi Etkinleştirin",
+                "description": "Sol menüden 'APIs & Services' > 'Library' (Kütüphane) bölümüne gidin. Arama kutusuna 'Gmail API' yazın ve 'Enable' (Etkinleştir) butonuna basın.",
+                "action_url": "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
+                "action_label": "Gmail API Kütüphanesi",
+                "warning": None,
+            },
+            {
+                "step_number": 3,
+                "title": "OAuth Onay Ekranını (Consent Screen) Yapılandırın",
+                "description": "'APIs & Services' > 'OAuth consent screen' sayfasına gelin. User Type olarak 'External' (Harici) seçin. Uygulama adını girip ilerleyin. 'Test users' adımında kendi Gmail adresinizi mutlaka ekleyin.",
+                "action_url": "https://console.cloud.google.com/apis/credentials/consent",
+                "action_label": "OAuth Consent Screen",
+                "warning": "Önemli: Uygulama 'Testing' modunda olduğundan yalnızca 'Test users' listesine eklediğiniz Gmail hesapları yetkilendirilebilir!",
+            },
+            {
+                "step_number": 4,
+                "title": "OAuth Client ID (Web Application) Oluşturun",
+                "description": "'APIs & Services' > 'Credentials' sayfasına gidin. '+ CREATE CREDENTIALS' > 'OAuth client ID' seçin. Application type olarak 'Web application' seçin.",
+                "action_url": "https://console.cloud.google.com/apis/credentials",
+                "action_label": "Credentials Sayfası",
+                "warning": "DİKKAT: 'API Key' oluşturmayın! Job Finder güvenli kullanıcı adına okuma yapabilmek için OAuth 2.0 Web Application Client ID ve Secret kullanır.",
+            },
+            {
+                "step_number": 5,
+                "title": "Authorized Redirect URI (Yönlendirme Adresi) Ekleyin",
+                "description": "'Authorized redirect URIs' bölümüne aşağıdaki adresi eksiksiz ve birebir ekleyin. Ardından 'Create' butonuna basın.",
+                "copyable_text": None,
+                "warning": "Adresin sonundaki eğik çizgiye (/), http/https protokolüne ve port numarasına dikkat edin.",
+            },
+            {
+                "step_number": 6,
+                "title": "Client ID ve Client Secret'ı Kaydedip Bağlanın",
+                "description": "Ekrana gelen Client ID ve Client Secret değerlerini aşağıdaki forma yapıştırın ve 'Kaydet' butonuna basın. Ardından 'Gmail ile bağlan' düğmesine tıklayarak hesabınızı yetkilendirin.",
+                "warning": None,
+            },
+        ],
+        "faq": [
+            {
+                "question": "API Key mi yoksa OAuth Client mı oluşturmam gerekiyor?",
+                "answer": "Kesinlikle OAuth Client oluşturulmalıdır. API Key sadece proje kotasını izler, posta kutusu okuyamaz. Job Finder LinkedIn iş ilanlarını posta kutunuzdan okuyabilmek için OAuth 2.0 Web Application kullanır.",
+            },
+            {
+                "question": "Neden 7 gün sonra bağlantı kopuyor ve 'Yeniden yetkilendir' gerekiyor?",
+                "answer": "Google Cloud Console'da OAuth Consent Screen 'Testing' (Test) durumundayken verilen Refresh Token'lar Google güvenlik politikası gereği 7 gün geçerlidir. 7 gün sonunda karttaki 'Yeniden yetkilendir' düğmesine basarak tek tıkla yenileyebilirsiniz. Kalıcı kılmak için Google Console'da uygulamayı 'In production' moduna alabilirsiniz.",
+            },
+            {
+                "question": "Google parolam Job Finder ile paylaşılıyor mu?",
+                "answer": "Hayır. Yetkilendirme tamamen Google'ın kendi resmi oturum açma sayfasında gerçekleşir. Parolanız asla istenmez veya saklanmaz. Yalnızca okuma izni olan bir erişim belirteci kullanılır.",
+            },
+            {
+                "question": "Hangi izinleri (scopes) vermem gerekiyor?",
+                "answer": "Yalnızca 'https://www.googleapis.com/auth/gmail.readonly' (sadece okuma). Job Finder e-posta silme, gönderme veya değiştirme izni kesinlikle istemez.",
+            },
+        ],
+        "troubleshooting": [
+            {
+                "error_code": "redirect_uri_mismatch",
+                "title": "Hata: redirect_uri_mismatch (400)",
+                "cause": "Google Cloud Console'a eklenen Authorized redirect URI ile Job Finder'ın yönlendirdiği callback adresi uyuşmuyor.",
+                "solution": "Google Cloud > Credentials > Web Client ayarlarındaki 'Authorized redirect URIs' alanına bu ekranda verilen Redirect URI'yi birebir kopyalayıp kaydedin.",
+            },
+            {
+                "error_code": "access_denied",
+                "title": "Hata: access_denied",
+                "cause": "Google onay ekranında 'İptal'e basıldı veya Gmail adresiniz 'Test users' listesine eklenmemiş.",
+                "solution": "Google Cloud Console > OAuth consent screen > 'Test users' bölümüne kendi Gmail adresinizin eklendiğinden emin olup tekrar bağlanın.",
+            },
+            {
+                "error_code": "invalid_client",
+                "title": "Hata: invalid_client",
+                "cause": "Client ID veya Client Secret yanlış girildi ya da Google Console'dan silindi.",
+                "solution": "Google Cloud Console'daki Web Client bilgilerini kontrol edip aşağıdaki formda 'Güncelle' diyerek yeniden kaydedin.",
+            },
         ],
     },
     Provider.OUTLOOK.value: {
-        "title": "Microsoft Entra - Web uygulaması",
+        "title": "Microsoft Entra - OAuth 2.0 Web Uygulaması",
         "redirect_uri": lambda: settings.outlook_redirect_uri,
         "scopes": ["Mail.Read", "User.Read", "offline_access"],
         "steps": [
@@ -73,6 +167,94 @@ PROVIDER_GUIDES: dict[str, dict[str, object]] = {
         "notes": [
             "Kişisel Hotmail/Outlook/Live hesapları 'consumers' kiracısı ile yetkilendirilir.",
             "Client secret süresi dolduğunda yeni secret ile bu formu güncelleyip yeniden bağlanın.",
+        ],
+        "estimated_minutes": 5,
+        "prerequisites": [
+            "Aktif bir Microsoft hesabı (Hotmail, Outlook, Live veya kurumsal Office365)",
+            "Microsoft Entra admin center erişimi (entra.microsoft.com - ücretsizdir)",
+        ],
+        "official_links": [
+            {"label": "Microsoft Entra Admin Center", "url": "https://entra.microsoft.com"},
+            {"label": "Microsoft Graph Dokümantasyonu", "url": "https://learn.microsoft.com/en-us/graph"},
+        ],
+        "structured_steps": [
+            {
+                "step_number": 1,
+                "title": "Microsoft Entra'da Uygulama Kaydı Başlatın",
+                "description": "entra.microsoft.com adresine gidin. 'Identity' (veya Entra ID) > 'Applications' > 'App registrations' bölümüne gidin ve '+ New registration' butonuna tıklayın.",
+                "action_url": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+                "action_label": "App Registrations",
+                "warning": None,
+            },
+            {
+                "step_number": 2,
+                "title": "Hesap Türünü Doğru Seçin",
+                "description": "Name alanına 'Job Finder' yazın. 'Supported account types' bölümünde MUTLAKA 'Accounts in any organizational directory and personal Microsoft accounts' veya 'Personal Microsoft accounts only' seçeneğini işaretleyin.",
+                "warning": "Kişisel Hotmail/Outlook hesabı için 'Single tenant' seçmeyin! Kişisel hesapları destekleyen seçeneği seçmelisiniz.",
+            },
+            {
+                "step_number": 3,
+                "title": "Web Platformu ve Redirect URI Ekleyin",
+                "description": "Redirect URI bölümünde platform olarak 'Web' seçin ve aşağıdaki adresi yapıştırın. Ardından 'Register' butonuna tıklayın.",
+                "copyable_text": None,
+                "warning": None,
+            },
+            {
+                "step_number": 4,
+                "title": "Client Secret Oluşturun — KRİTİK VALUE UYARISI!",
+                "description": "Sol menüden 'Certificates & secrets' sayfasına geçin. '+ New client secret' butonuna tıklayın. Açıklama yazıp 'Add' deyin. DİKKAT: Oluşan tabloda 'Secret ID' kolonu DEĞİL, 'Value' (Değer) kolonundaki metni kopyalayın!",
+                "warning": "SIK YAPILAN HATA: 'Secret ID' şifre değildir! Mutlaka 'Value' (Değer) kolonundaki gizli metni kopyalamalısınız. Sayfadan ayrılırsanız Value bir daha görünmez.",
+            },
+            {
+                "step_number": 5,
+                "title": "API İzinlerini Kontrol Edin",
+                "description": "Sol menüden 'API permissions' sayfasına bakın. Microsoft Graph > Delegated permissions altında 'Mail.Read' ve 'User.Read' izinlerinin eklendiğinden emin olun.",
+                "warning": None,
+            },
+            {
+                "step_number": 6,
+                "title": "Client ID ve Secret'ı Kaydedip Bağlanın",
+                "description": "Overview sayfasındaki 'Application (client) ID' ve oluşturduğunuz Secret 'Value' değerini forma yapıştırın. Kişisel hesaplar için Kiracı olarak 'consumers' seçip 'Kaydet'e basın. Ardından 'Hotmail / Outlook ile bağlan' düğmesine tıklayın.",
+                "warning": None,
+            },
+        ],
+        "faq": [
+            {
+                "question": "Microsoft'ta 'Secret ID' ile 'Value' arasındaki fark nedir?",
+                "answer": "'Secret ID', anahtarın Entra sistemindeki kimlik numarasıdır (GUID). 'Value' ise gerçek gizli şifredir (Client Secret). Job Finder'a mutlaka 'Value' değeri girilmelidir. 'Secret ID' girilirse invalid_client hatası oluşur.",
+            },
+            {
+                "question": "Kiracı (Tenant) olarak ne seçmeliyim?",
+                "answer": "Kişisel bir @outlook.com, @hotmail.com veya @live.com adresi kullanıyorsanız 'consumers' seçmelisiniz. Şirket/okul Office365 hesabı için 'common' veya firmanıza özel kiracı ID'si kullanılır.",
+            },
+            {
+                "question": "Admin consent (Yönetici Onayı) uyarısı alıyorum?",
+                "answer": "Kurumsal bir hesap kullanıyorsanız Azure Active Directory yöneticinizin onayı gerekebilir. Kişisel hesaplar 'consumers' seçtiğinde yönetici onayı gerekmez.",
+            },
+            {
+                "question": "Microsoft şifrem güvende mi?",
+                "answer": "Job Finder parolanızı asla istemez veya görmez. Giriş işlemi doğrudan Microsoft sunucularında yapılır ve yalnızca okuma yetkili token sunucumuzda şifreli saklanır.",
+            },
+        ],
+        "troubleshooting": [
+            {
+                "error_code": "AADSTS50011",
+                "title": "Hata: AADSTS50011 (Redirect URI Mismatch)",
+                "cause": "Microsoft Entra'da kayıtlı Web Redirect URI ile Job Finder'ın yönlendirdiği adres birebir uyuşmuyor.",
+                "solution": "Entra Portal > Authentication > Web bölümünde Redirect URI'nin bu ekranda verilen adresle harfiyen aynı olduğundan emin olun.",
+            },
+            {
+                "error_code": "AADSTS7000215",
+                "title": "Hata: AADSTS7000215 (Invalid Client Secret)",
+                "cause": "Secret Value yerine 'Secret ID' kopyalanmış veya secret süresi dolmuş.",
+                "solution": "Certificates & secrets sekmesine gidin, yeni bir Client Secret oluşturun ve 'Value' kolonundaki değeri kopyalayıp forma kaydedin.",
+            },
+            {
+                "error_code": "access_denied",
+                "title": "Hata: access_denied",
+                "cause": "İzin ekranında 'İptal'e basıldı veya kuruluşunuz kişisel hesap izinlerini engelliyor.",
+                "solution": "Yetkilendirme akışını yeniden başlatıp 'Kabul et' butonuna basın.",
+            },
         ],
     },
 }
@@ -194,6 +376,14 @@ class OAuthClientService:
     def public_view(self, user: User, provider: str) -> dict:
         config = self.clients.get_for_user_provider(user.id, provider)
         guide = PROVIDER_GUIDES[provider]
+        redirect_uri = str(guide["redirect_uri"]())  # type: ignore[operator]
+        structured_steps = []
+        for step in guide.get("structured_steps", []):  # type: ignore[union-attr]
+            s = dict(step)
+            if "Redirect URI" in s.get("title", "") and not s.get("copyable_text"):
+                s["copyable_text"] = redirect_uri
+            structured_steps.append(s)
+
         return {
             "provider": provider,
             "configured": config is not None,
@@ -204,11 +394,17 @@ class OAuthClientService:
                 else None
             ),
             "tenant": config.tenant if config else None,
-            "redirect_uri": guide["redirect_uri"](),  # type: ignore[operator]
+            "redirect_uri": redirect_uri,
             "scopes": guide["scopes"],
             "title": guide["title"],
             "steps": guide["steps"],
             "notes": guide["notes"],
+            "estimated_minutes": guide.get("estimated_minutes", 5),
+            "prerequisites": guide.get("prerequisites", []),
+            "structured_steps": structured_steps,
+            "faq": guide.get("faq", []),
+            "troubleshooting": guide.get("troubleshooting", []),
+            "official_links": guide.get("official_links", []),
             "updated_at": config.updated_at.isoformat() if config else None,
         }
 

@@ -153,3 +153,27 @@ def compute_content_hash(text: str | None) -> str | None:
     if not cleaned:
         return None
     return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
+
+
+def is_specific_job_url(url: str | None) -> bool:
+    """Check if the URL path or query indicates a specific job posting rather than a general directory or board root."""
+    if not url:
+        return False
+    try:
+        parts = urlsplit(url)
+        path = parts.path.lower()
+        host = (parts.hostname or "").lower()
+        if re.search(r"/(?:jobs?|position|posting|role|o)/[a-zA-Z0-9_\-]+", path):
+            return True
+        if re.search(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", path):
+            return True
+        segments = [s for s in path.strip("/").split("/") if s]
+        if any(ats in host for ats in ("ashbyhq.com", "lever.co", "workable.com", "greenhouse.io")) and len(segments) >= 2:
+            return True
+        if parts.query and any(k.lower() in {"gh_jid", "job_id", "jobid", "jid"} for k, _ in parse_qsl(parts.query)):
+            return True
+        return False
+    except Exception:
+        return False
+
+

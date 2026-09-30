@@ -260,17 +260,55 @@ def extract_from_semantic_html(html: str) -> ExtractedJobData | None:
     for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "iframe"]):
         tag.decompose()
 
+    raw_html_title = soup.title.string.strip() if (soup.title and soup.title.string) else ""
+
+    # Check for board index patterns (e.g. "Jobs at Cadence Solutions", "Careers at ...")
+    # A page whose title is "Jobs at <Company>" or "Careers at <Company>" is a board index, NOT a job posting
+    if raw_html_title and re.search(r"^(?:jobs|careers|open positions|open roles|opportunities)\s+(?:at|in)\s+", raw_html_title, re.IGNORECASE):
+        if not re.search(r"^job application for\s+", raw_html_title, re.IGNORECASE):
+            return None
+
     # Title: og:title -> twitter:title -> <title>
     title = None
+    company = None
     og_title = soup.find("meta", property="og:title") or soup.find("meta", attrs={"name": "twitter:title"})
     if og_title and og_title.get("content"):
         title = og_title["content"].strip()
-    elif soup.title and soup.title.string:
-        title = soup.title.string.strip()
+
+    # Extract company from og:site_name or meta author/company
+    og_site_name = soup.find("meta", property="og:site_name") or soup.find("meta", attrs={"name": "og:site_name"})
+    if og_site_name and og_site_name.get("content"):
+        company = og_site_name["content"].strip()
+    elif not company:
+        author_meta = soup.find("meta", attrs={"name": "author"}) or soup.find("meta", attrs={"name": "company"})
+        if author_meta and author_meta.get("content"):
+            company = author_meta["content"].strip()
+
+    # Extract from raw HTML title if available
+    if raw_html_title:
+        m_app = re.search(r"job application for\s+(?P<t>.+?)\s+at\s+(?P<c>[^|\-–—]+)", raw_html_title, re.IGNORECASE)
+        if m_app:
+            if not company:
+                company = m_app.group("c").strip()
+            if not title or title.lower() in raw_html_title.lower():
+                title = m_app.group("t").strip()
+        else:
+            m_at = re.search(r"(?P<t>.+?)\s+at\s+(?P<c>[^|\-–—]+)", raw_html_title, re.IGNORECASE)
+            if m_at and not raw_html_title.lower().startswith(("jobs at", "careers at")):
+                if not company:
+                    company = m_at.group("c").strip()
+                if not title:
+                    title = m_at.group("t").strip()
+            elif not title:
+                title = raw_html_title
 
     # Clean site suffix from title (e.g. "Senior Python Engineer - Google Careers")
     if title:
         title = re.split(r"\s+[|\-–—]\s+", title)[0].strip()
+
+    # If title still starts with "Jobs at" or "Careers at", this is a directory page, not a job posting
+    if title and re.search(r"^(?:jobs|careers|open positions|open roles)\s+at\s+", title, re.IGNORECASE):
+        return None
 
     # Date posted
     date_posted = None

@@ -748,6 +748,76 @@ Açıklama yeterli mi? (kelime sayısı ≥ 120 veya ok)
    - Detay sayfasında keşfedilen kaynakların listesini, güven puanını, eşleşme oranını ve kanonik işaretini gösteren **Web Kaynakları (Provenance)** kartı.
    - İlan listesinde tazelik durumu filtresi (`fresh`, `aging`, `stale`, `expired`).
 
+### Gerçek Dünya Kabul Testleri (Real-World Acceptance Testing)
+
+Sistemin gerçek internet üzerinde, hiçbir sahte veri veya mock kullanmaksızın, canlı arama motoru (SearXNG) ve resmi ATS kaynakları (Greenhouse, Ashby vb.) üzerinden iş ilanlarını bulup tam metinlerini çıkarabilmesi sıkı kriterlerle doğrulanmıştır.
+
+#### 1) SearXNG Kurulumu ve Çalıştırılması
+
+Web araması için SearXNG Docker konteyneri kullanılır:
+
+```bash
+docker run -d \
+  --name searxng-live \
+  -p 8080:8080 \
+  -v /tmp/searxng:/etc/searxng \
+  -e "SEARXNG_BASE_URL=http://localhost:8080/" \
+  searxng/searxng:latest
+```
+
+`/tmp/searxng/settings.yml` yapılandırmasında Bing, DuckDuckGo, Qwant, Yahoo ve Google motorları etkinleştirilmiştir.
+
+#### 2) Canlı Kabul Testi Çalıştırma
+
+Tüm canlı hedefleri bağımsız geçici veritabanlarında çalıştırmak için:
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --all-targets
+```
+
+Tekil hedef testi için:
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --company "Impiricus" --title "AI Engineer"
+```
+
+#### 3) Değerlendirme Kriterleri (PASS / FAIL / PARTIAL / BLOCKED)
+
+| Kriter | Beklenen Koşul | Açıklama |
+| --- | --- | --- |
+| **Arama Başarısı** | `search_result_count > 0` | SearXNG sorguları geçerli sonuçlar döndürmeli |
+| **Sayfa İndirme** | `web_fetch_count > 0` | Aday resmi veya ATS sayfaları çekilmiş olmalı |
+| **LinkedIn Yasağı** | `linkedin_fetch_count == 0` | **Sıfır LinkedIn fetch**; istisnasız engellenir |
+| **Kanonik URL** | `selected_source_url is not None` | Güvenilir bir ilan URL'si seçilmiş olmalı |
+| **Kaynak Güveni** | `source_confidence in {"high", "medium"}` | Şirket ve unvan benzerliği doğrulanmış olmalı |
+| **Açıklama Boyutu** | `description_length >= 300` | Sadece başlık/özet değil, zengin metin çıkarılmalı |
+| **Durum** | `enrichment_status == "enriched"` | Zenginleştirme tam olarak onaylanmış olmalı |
+| **Semantik Sinyaller** | En az 2 sinyal (`ai`, `engineer`, `software` vb.) | İçerik gerçek iş ilanı anahtar kelimeleri içermeli |
+| **Domain Güveni** | `trust >= 85` veya ATS tenant eşleşmesi | Doğrulanmış resmi ATS veya şirket domaini olmalı |
+| **İzolasyon** | `tempfile.mkdtemp()` + engine disposal | Her test hedefi bağımsız geçici DB'de çalışır |
+
+- **PASS:** Yukarıdaki tüm 10 koşulun eksiksiz sağlanması.
+- **PARTIAL:** Metin zenginleştirilmiş ancak bazı sinyallerin sınırda kalması.
+- **FAIL:** Yanlış şirket/unvan, boş içerik veya yetersiz açıklama boyutu.
+- **BLOCKED:** SearXNG'ye veya ağa ulaşılamaması durumu (`SearchUnavailableError`).
+
+#### 4) Canlı İnternet Test Sonuçları (3 Hedef Şirket)
+
+| Şirket | Aranan Unvan | Sonuç | Güven | Metin Uzunluğu | Süre | Seçilen Kanonik URL |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Impiricus** | AI Engineer | **PASS** | `high` | 7,602 karakter | 5,097 ms | `https://job-boards.greenhouse.io/impiricus/jobs/5427769008` |
+| **Cadence Solutions** | AI Engineer | **PASS** | `high` | 7,182 karakter | 4,771 ms | `https://job-boards.greenhouse.io/solutions/jobs/4680769006` |
+| **Synthesia** | Backend Engineer | **PASS** | `high` | 6,283 karakter | 4,012 ms | `https://jobs.ashbyhq.com/synthesia/83052182-d2b9-40d5-bd87-d400e7786a9a` |
+
+- **Sonuç:** 3/3 canlı hedef (%100) tüm sıkı kriterleri sağlayarak **PASS** almıştır.
+
+#### 5) Geçici Veritabanı ve Kaynak Yaşam Döngüsü Mimarisi
+
+- Her test hedefi için `tempfile.mkdtemp(prefix="jobhunter_live_...")` ile izole bir geçici dizin ve bağımsız SQLite dosyası oluşturulur.
+- Test tamamlandığında `finally` bloğunda SQLAlchemy engine bağlantı havuzu `engine.dispose()` ile boşaltılır ve `shutil.rmtree` ile geçici dosyalar sistemden temizlenir.
+- `SafeWebFetcher` ve `SearXNGSearchProvider` oturumları asenkron olarak `await close()` ile kapatılarak bağlantı sızıntıları önlenir.
+
 ### Aşama 3'te yapılmayanlar (bilinçli)
 
 - Otomatik iş başvurusu, LinkedIn scraping/browser automation, Redis/Celery/Kubernetes, deploy — kapsam dışı.

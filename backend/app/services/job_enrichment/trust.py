@@ -174,15 +174,23 @@ def compute_string_similarity(str1: str, str2: str) -> float:
     # SequenceMatcher ratio
     seq_ratio = difflib.SequenceMatcher(None, norm1, norm2).ratio()
 
-    # Token set Jaccard
+    # Token set Jaccard & Containment
     tokens1 = set(norm1.split())
     tokens2 = set(norm2.split())
     if not tokens1 or not tokens2:
         jaccard = 0.0
+        containment_score = 0.0
     else:
-        jaccard = len(tokens1 & tokens2) / len(tokens1 | tokens2)
+        intersection = tokens1 & tokens2
+        jaccard = len(intersection) / len(tokens1 | tokens2)
+        min_len = min(len(tokens1), len(tokens2))
+        if min_len >= 2:
+            containment = len(intersection) / min_len
+            containment_score = containment * 0.80
+        else:
+            containment_score = 0.0
 
-    return max(seq_ratio, jaccard)
+    return max(seq_ratio, jaccard, containment_score)
 
 
 def calculate_match_confidence(

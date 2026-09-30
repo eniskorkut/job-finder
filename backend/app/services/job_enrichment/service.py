@@ -45,6 +45,7 @@ from app.services.job_enrichment.url_utils import (
     compute_content_hash,
     extract_domain,
     is_linkedin_url,
+    is_specific_job_url,
     normalize_linkedin_job_url,
     normalize_url,
 )
@@ -121,7 +122,7 @@ def build_search_queries(
     limit = max_queries or settings.web_search_max_queries_per_job
     queries = [
         f'"{company}" "{title}" careers job',
-        f'site:greenhouse.io OR site:lever.co OR site:myworkdayjobs.com "{company}" "{title}"',
+        f'site:greenhouse.io OR site:lever.co OR site:ashbyhq.com OR site:myworkdayjobs.com "{company}" "{title}"',
         f'"{company}" "{title}" apply',
     ]
     if not existing_linkedin:
@@ -283,10 +284,13 @@ async def execute_enrichment_flow(
             seen_urls.add(norm)
             candidate_urls.append(res.url)
 
-    # Prioritize candidate URLs by domain trust
-    def _candidate_priority(u: str) -> int:
+    # Prioritize candidate URLs by domain trust, specific job path, and penalize error URLs
+    def _candidate_priority(u: str) -> tuple[int, int, int, int]:
         _, trust, _ = classify_source(u, company)
-        return trust
+        is_job_path = 1 if is_specific_job_url(u) else 0
+        is_err = 1 if ("error=true" in u.lower() or "login" in u.lower()) else 0
+        tier = 2 if (trust >= 80 and is_job_path) else (1 if trust >= 80 else 0)
+        return (tier, trust, is_job_path, -is_err)
 
     # Include pre-existing canonical or company URLs for re-verification
     for existing_url in (snapshot.canonical_url, snapshot.company_job_url):
@@ -346,8 +350,9 @@ async def execute_enrichment_flow(
                     is_not_modified=True,
                 )
 
-            # 404 / 410 handling
-            if fetch_res.status_code in {404, 410}:
+            # 404 / 410 or error redirect handling (e.g. Greenhouse ?error=true)
+            is_error_redirect = "?error=true" in (fetch_res.final_url or "").lower()
+            if fetch_res.status_code in {404, 410} or is_error_redirect:
                 tenant = extract_ats_tenant(c_url)
                 tenant_match = bool(tenant and compute_string_similarity(company, tenant) >= 0.60)
                 is_prev_verified = bool(norm_c in verified_urls)
@@ -361,7 +366,7 @@ async def execute_enrichment_flow(
                     match_confidence=conf,
                     title=None,
                     extracted_data=None,
-                    http_status=fetch_res.status_code,
+                    http_status=404 if is_error_redirect else fetch_res.status_code,
                     content_hash=None,
                     etag=fetch_res.etag,
                     last_modified=fetch_res.last_modified,

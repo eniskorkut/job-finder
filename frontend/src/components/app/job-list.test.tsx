@@ -252,4 +252,33 @@ describe("JobList", () => {
       expect(last).toContain("freshness_status=fresh");
     });
   });
+
+  it("passes enrichment, source and verified sort filters to the API and updates activeFilterCount", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockJobsApi();
+    render(<JobList />);
+    await screen.findByText("Senior AI Engineer");
+
+    // Select enrichment
+    await user.selectOptions(screen.getByLabelText("Zenginleştirme durumu"), "enriched");
+    expect(await screen.findByText("Temizle (1)")).toBeInTheDocument();
+
+    // Select source
+    await user.selectOptions(screen.getByLabelText("Kaynak"), "official_ats");
+    expect(await screen.findByText("Temizle (2)")).toBeInTheDocument();
+
+    // Select verified sort
+    await user.selectOptions(screen.getByLabelText("Sıralama"), "verified");
+
+    await waitFor(() => {
+      const last = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.includes("/api/v1/jobs?"))
+        .pop();
+      expect(last).toContain("enrichment_status=enriched");
+      expect(last).toContain("source=official_ats");
+      expect(last).toContain("sort=verified");
+    });
+  });
 });
+

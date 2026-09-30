@@ -182,6 +182,7 @@ export interface JobStats {
   pending_enrichment?: number;
   problematic_enrichment?: number;
   fresh_jobs?: number;
+  aging_jobs?: number;
   stale_jobs?: number;
   expired_jobs?: number;
 }

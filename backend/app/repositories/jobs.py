@@ -19,6 +19,7 @@ SORT_OPTIONS = {
     "title": (Job.title.asc(), Job.discovered_at.desc()),
     "posted_at": (Job.posted_at.desc().nulls_last(), Job.discovered_at.desc()),
     "freshness": (Job.freshness_status.asc(), Job.discovered_at.desc()),
+    "verified": (Job.last_verified_at.desc().nulls_last(), Job.discovered_at.desc()),
 }
 
 
@@ -67,7 +68,20 @@ class JobRepository(Repository[Job]):
             if work_mode:
                 stmt = stmt.where(Job.work_mode == work_mode)
             if source:
-                stmt = stmt.where(Job.source == source)
+                if source == "official_ats":
+                    stmt = stmt.where(
+                        or_(
+                            Job.canonical_url.is_not(None),
+                            Job.company_job_url.is_not(None),
+                            Job.source == "official_ats",
+                        )
+                    )
+                elif source == "linkedin":
+                    stmt = stmt.where(Job.linkedin_url.is_not(None))
+                elif source == "mail":
+                    stmt = stmt.where(Job.source.in_(["gmail", "outlook"]))
+                else:
+                    stmt = stmt.where(Job.source == source)
             if freshness_status:
                 stmt = stmt.where(Job.freshness_status == freshness_status)
             if enrichment_status:
@@ -113,7 +127,7 @@ class JobRepository(Repository[Job]):
         )
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def stats(self, user_id: uuid.UUID, high_match_threshold: int) -> dict:
+    def stats(self, user_id: uuid.UUID, high_match_threshold: int = 70) -> dict:
         total = int(
             self.db.execute(
                 select(func.count(Job.id)).where(Job.user_id == user_id)
@@ -234,6 +248,7 @@ class JobRepository(Repository[Job]):
         ).all()
         fresh_counts = {status: int(count) for status, count in fresh_rows}
         fresh_jobs = fresh_counts.get("fresh", 0)
+        aging_jobs = fresh_counts.get("aging", 0)
         stale_jobs = fresh_counts.get("stale", 0)
         expired_jobs = fresh_counts.get("expired", 0)
 
@@ -263,6 +278,7 @@ class JobRepository(Repository[Job]):
             "pending_enrichment": pending_enrichment,
             "problematic_enrichment": problematic_enrichment,
             "fresh_jobs": fresh_jobs,
+            "aging_jobs": aging_jobs,
             "stale_jobs": stale_jobs,
             "expired_jobs": expired_jobs,
         }

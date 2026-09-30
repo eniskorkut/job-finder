@@ -47,6 +47,7 @@ interface Filters {
   notification: string;
   freshness: string;
   enrichment: string;
+  source: string;
   sort: string;
 }
 
@@ -61,6 +62,7 @@ const emptyFilters: Filters = {
   notification: "",
   freshness: "",
   enrichment: "",
+  source: "",
   sort: "score",
 };
 
@@ -112,6 +114,7 @@ export function JobList({
         notification: filters.notification,
         freshness_status: filters.freshness,
         enrichment_status: filters.enrichment,
+        source: filters.source,
         sort: filters.sort,
         page,
         page_size: pageSize,
@@ -127,6 +130,7 @@ export function JobList({
       filters.notification,
       filters.freshness,
       filters.enrichment,
+      filters.source,
       filters.sort,
       page,
       pageSize,
@@ -146,6 +150,8 @@ export function JobList({
     filters.analysisStatus,
     filters.notification,
     filters.freshness,
+    filters.enrichment,
+    filters.source,
   ].filter(Boolean).length;
 
   function update<K extends keyof Filters>(key: K, value: Filters[K]) {
@@ -313,12 +319,23 @@ export function JobList({
               <option value="failed">Hata verenler</option>
             </Select>
             <Select
+              value={filters.source}
+              onChange={(event) => update("source", event.target.value)}
+              aria-label="Kaynak"
+            >
+              <option value="">Tüm kaynaklar</option>
+              <option value="official_ats">Resmi / ATS</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="mail">E-posta (Gmail/Outlook)</option>
+            </Select>
+            <Select
               value={filters.sort}
               onChange={(event) => update("sort", event.target.value)}
               aria-label="Sıralama"
             >
               <option value="recent">Keşfe göre (en yeni)</option>
               <option value="posted_at">Yayın tarihine göre</option>
+              <option value="verified">Son doğrulanan</option>
               <option value="freshness">Tazelik durumuna göre</option>
               <option value="score">Puan (yüksek → düşük)</option>
               <option value="score_asc">Puan (düşük → yüksek)</option>

@@ -145,6 +145,7 @@ class JobStats(ORMModel):
     pending_enrichment: int = 0
     problematic_enrichment: int = 0
     fresh_jobs: int = 0
+    aging_jobs: int = 0
     stale_jobs: int = 0
     expired_jobs: int = 0
 

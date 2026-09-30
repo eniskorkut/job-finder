@@ -297,8 +297,6 @@ class SyncRunner:
                     capped_delay = min(30.0, max(0.0, float(test_delay)))
                     if capped_delay > 0:
                         await asyncio.sleep(capped_delay)
-            elif self._execution_hook is not None and (settings.environment or "").lower() in {"test", "development"}:
-                await self._execution_hook(job_id, attempt)
 
             if kind == "enrichment":
                 status = await self._execute_enrichment(job_id)

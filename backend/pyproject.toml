@@ -14,7 +14,8 @@ dependencies = [
   "cryptography>=44.0",
   "python-multipart>=0.0.20",
   "email-validator>=2.2",
-  "httpx>=0.28",
+  "httpx==0.28.1",
+  "httpcore==1.0.9",
   # phase 2: mailbox scanning and CV text extraction
   "msal>=1.31",
   "beautifulsoup4>=4.13",

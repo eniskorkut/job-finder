@@ -245,6 +245,30 @@ export function DashboardView() {
               </Link>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>İlan Tazelik Durumu</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-2 text-[12.5px]">
+              <div className="flex items-center justify-between rounded-[var(--radius-inner)] bg-surface-muted px-2.5 py-1.5">
+                <span className="text-ink-muted">Taze</span>
+                <Badge variant="success" className="tabular">{stats.data?.fresh_jobs ?? 0}</Badge>
+              </div>
+              <div className="flex items-center justify-between rounded-[var(--radius-inner)] bg-surface-muted px-2.5 py-1.5">
+                <span className="text-ink-muted">Güncel</span>
+                <Badge variant="info" className="tabular">{stats.data?.aging_jobs ?? 0}</Badge>
+              </div>
+              <div className="flex items-center justify-between rounded-[var(--radius-inner)] bg-surface-muted px-2.5 py-1.5">
+                <span className="text-ink-muted">Eski</span>
+                <Badge variant="warning" className="tabular">{stats.data?.stale_jobs ?? 0}</Badge>
+              </div>
+              <div className="flex items-center justify-between rounded-[var(--radius-inner)] bg-surface-muted px-2.5 py-1.5">
+                <span className="text-ink-muted">Süresi doldu</span>
+                <Badge variant="danger" className="tabular">{stats.data?.expired_jobs ?? 0}</Badge>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </section>
 

@@ -7,10 +7,13 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from typing import Callable
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.integrations.web_fetch.fetcher import (
     FetchResult,
     LinkedInFetchForbiddenError,
@@ -804,16 +807,25 @@ class JobEnrichmentService:
 
     def __init__(
         self,
-        db: Session,
+        db: Session | None = None,
         *,
+        session_factory: Callable[[], Session] | None = None,
         search_provider: SearchProvider | None = None,
         fetcher: SafeWebFetcher | None = None,
     ) -> None:
         self.db = db
+        if session_factory is not None:
+            self.session_factory = session_factory
+        elif db is not None:
+            from sqlalchemy.orm import sessionmaker
+            self.session_factory = sessionmaker(bind=db.get_bind())
+        else:
+            self.session_factory = SessionLocal
+
         self.search_provider = search_provider or get_search_provider()
         self.fetcher = fetcher or SafeWebFetcher()
-        self.jobs = JobRepository(db)
-        self.web_sources = JobWebSourceRepository(db)
+        self.jobs = JobRepository(db) if db is not None else None
+        self.web_sources = JobWebSourceRepository(db) if db is not None else None
 
     def is_enrichment_needed(
         self,
@@ -865,7 +877,14 @@ class JobEnrichmentService:
         """Run discovery, enrichment, and freshness calculation for a single job posting.
         Network operations execute detached without holding active DB transactions.
         """
-        snapshot = take_snapshot(self.db, job_id)
+        # Ensure any uncommitted transaction on caller's db session is committed before snapshot
+        if self.db is not None and self.db.in_transaction():
+            self.db.commit()
+
+        # Step 1: Read snapshot in a short DB session and immediately close/commit it
+        with self.session_factory() as session:
+            snapshot = take_snapshot(session, job_id)
+
         if snapshot is None:
             return JobEnrichmentOutcome(
                 job_id=job_id,
@@ -877,7 +896,7 @@ class JobEnrichmentService:
                 error_message="İlan bulunamadı.",
             )
 
-        # Pure async network operations run outside DB transaction
+        # Step 2: Pure async network operations run outside DB transaction
         result = await execute_enrichment_flow(
             snapshot,
             self.search_provider,
@@ -885,4 +904,15 @@ class JobEnrichmentService:
             force=force,
         )
 
-        return persist_result(self.db, result, snapshot)
+        # Step 3: Persist result in a NEW short DB session
+        with self.session_factory() as session:
+            outcome = persist_result(session, result, snapshot)
+            session.commit()
+
+        if self.db is not None:
+            try:
+                self.db.expire_all()
+            except Exception:
+                pass
+
+        return outcome

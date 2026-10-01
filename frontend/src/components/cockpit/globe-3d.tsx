@@ -215,8 +215,12 @@ export function Globe3D({
         });
 
       const geo = (window as any).COUNTRIES_GEOJSON;
-      if (geo && geo.features) {
-        globe.polygonsData(geo.features);
+      if (geo && Array.isArray(geo.features)) {
+        // Filter out features with null geometry — Globe.gl reads geometry.type and crashes on null
+        const validFeatures = geo.features.filter(
+          (f: any) => f && f.geometry != null
+        );
+        globe.polygonsData(validFeatures);
       }
 
       const controls = globe.controls();

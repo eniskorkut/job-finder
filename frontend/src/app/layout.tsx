@@ -31,9 +31,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="tr" suppressHydrationWarning>
+    <html lang="tr" suppressHydrationWarning className="dark">
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script src="/assets/globe/globe.gl.min.js" />
+        <script src="/assets/globe/countries-data.js" />
       </head>
       <body>{children}</body>
     </html>

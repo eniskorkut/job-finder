@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Hunter — 5 Lüks &amp; Prestijli Ana Ekran Tasarımı</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --ease-lux: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    body {
+      background-color: #050507;
+      color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Cormorant Garamond", Georgia, serif;
+    }
+
+    /* Press reaction */
+    .lux-press {
+      transition: transform 160ms var(--ease-lux), filter 160ms ease, opacity 160ms ease;
+    }
+    .lux-press:active {
+      transform: scale(0.97);
+    }
+
+    /* ---------------------------------------------------- */
+    /* THEME 1: ATELIER GOLD                                */
+    /* ---------------------------------------------------- */
+    .gold-card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(212,175,55,0.015) 100%), #0a0b0e;
+      border: 1px solid rgba(212, 175, 55, 0.25);
+      box-shadow: 0 24px 48px -12px rgba(0,0,0,0.8), inset 0 1px 0 rgba(243, 229, 171, 0.2);
+    }
+    .gold-card:hover {
+      border-color: rgba(212, 175, 55, 0.5);
+      box-shadow: 0 30px 60px -12px rgba(0,0,0,0.9), 0 0 24px -6px rgba(212, 175, 55, 0.15);
+      transform: translateY(-2px);
+    }
+
+    /* ---------------------------------------------------- */
+    /* THEME 2: EMERALD SOVEREIGN                           */
+    /* ---------------------------------------------------- */
+    .emerald-card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.025) 0%, rgba(16,185,129,0.02) 100%), #080c0a;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      box-shadow: 0 24px 48px -12px rgba(0,0,0,0.85), inset 0 1px 0 rgba(52, 211, 153, 0.2);
+    }
+    .emerald-card:hover {
+      border-color: rgba(16, 185, 129, 0.55);
+      box-shadow: 0 30px 60px -12px rgba(0,0,0,0.9), 0 0 28px -6px rgba(16, 185, 129, 0.2);
+      transform: translateY(-2px);
+    }
+
+    /* ---------------------------------------------------- */
+    /* THEME 3: MIDNIGHT SAPPHIRE                           */
+    /* ---------------------------------------------------- */
+    .sapphire-card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(99,102,241,0.03) 100%), #060812;
+      border: 1px solid rgba(99, 102, 241, 0.28);
+      box-shadow: 0 24px 48px -12px rgba(0,0,0,0.85), inset 0 1px 0 rgba(165, 180, 252, 0.25);
+    }
+    .sapphire-card:hover {
+      border-color: rgba(99, 102, 241, 0.6);
+      box-shadow: 0 30px 60px -12px rgba(0,0,0,0.95), 0 0 30px -6px rgba(99, 102, 241, 0.25);
+      transform: translateY(-2px);
+    }
+
+    /* ---------------------------------------------------- */
+    /* THEME 4: SAVILE ROSE GOLD                            */
+    /* ---------------------------------------------------- */
+    .rose-card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(224,169,150,0.02) 100%), #0e090c;
+      border: 1px solid rgba(224, 169, 150, 0.25);
+      box-shadow: 0 24px 48px -12px rgba(0,0,0,0.85), inset 0 1px 0 rgba(242, 205, 196, 0.2);
+    }
+    .rose-card:hover {
+      border-color: rgba(224, 169, 150, 0.55);
+      box-shadow: 0 30px 60px -12px rgba(0,0,0,0.9), 0 0 28px -6px rgba(224, 169, 150, 0.2);
+      transform: translateY(-2px);
+    }
+
+    /* ---------------------------------------------------- */
+    /* THEME 5: CARBON MONOLITH (LIQUID SILVER)             */
+    /* ---------------------------------------------------- */
+    .carbon-card {
+      background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%), #040404;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 24px 48px -12px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    }
+    .carbon-card:hover {
+      border-color: rgba(255, 255, 255, 0.5);
+      box-shadow: 0 30px 60px -12px rgba(0,0,0,0.95), 0 0 28px -6px rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-amber-500/30 pb-28">
+
+  <!-- ======================================================== -->
+  <!-- MASTER TOP SWITCHER: 5 DISTINCT LUXURY ARCHETYPES        -->
+  <!-- ======================================================== -->
+  <div class="sticky top-0 z-50 bg-[#050507]/90 backdrop-blur-2xl border-b border-white/10 px-4 md:px-8 py-3.5">
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-mono uppercase tracking-widest text-white/40">Lüks Ekolü:</span>
+        <div class="p-1 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-wrap items-center gap-1">
+          <button class="theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-black bg-[#d4af37] font-bold shadow-md transition-all" data-theme="theme-gold">
+            01. Altın Şampanya
+          </button>
+          <button class="theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white/60 hover:text-white transition-all" data-theme="theme-emerald">
+            02. Zümrüt Titanyum
+          </button>
+          <button class="theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white/60 hover:text-white transition-all" data-theme="theme-sapphire">
+            03. Gece Safiri
+          </button>
+          <button class="theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white/60 hover:text-white transition-all" data-theme="theme-rose">
+            04. Gül Altını &amp; Bakır
+          </button>
+          <button class="theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white/60 hover:text-white transition-all" data-theme="theme-carbon">
+            05. Sıvı Gümüş &amp; Karbon
+          </button>
+        </div>
+      </div>
+
+      <div class="text-xs font-mono text-white/40 hidden md:block">
+        Enis Korkut • Özel Ana Ekran Prototipi
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MAIN CONTAINER WRAPPER                                   -->
+  <!-- ======================================================== -->
+  <main class="max-w-7xl mx-auto px-4 md:px-8 mt-8">
+
+    <!-- ------------------------------------------------------ -->
+    <!-- HOME SCREEN 1: ATELIER GOLD & OBSIDIAN                 -->
+    <!-- ------------------------------------------------------ -->
+    <div id="theme-gold" class="theme-screen space-y-8">
+      
+      <!-- Top Luxury Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-[#d4af37]/25 gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#d4af37] via-[#997825] to-[#070709] p-[1px]">
+            <div class="w-full h-full rounded-2xl bg-[#090a0d] flex items-center justify-center">
+              <svg class="w-6 h-6 text-[#d4af37]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono tracking-widest text-[#d4af37] uppercase">Sovereign Mandate</div>
+            <h2 class="text-2xl font-serif font-bold text-white tracking-wide">Aureus Executive Board</h2>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="px-4 py-2 rounded-full bg-black/60 border border-[#d4af37]/30 text-xs font-mono text-[#f3e5ab]">
+            Tarama Durumu: VIP Aktif (2 dk önce)
+          </div>
+          <div class="px-4 py-2 rounded-2xl bg-[#d4af37] text-black font-bold text-xs font-mono uppercase tracking-wider">
+            Enis Korkut
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Golden Metric Slabs -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="gold-card p-6 rounded-3xl">
+          <div class="text-[10px] font-mono text-[#d4af37] uppercase tracking-widest">Özel Havuz</div>
+          <div class="text-3xl font-serif font-bold text-white mt-1">48 Dosya</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">6 yeni onaylandı</div>
+        </div>
+        <div class="gold-card p-6 rounded-3xl">
+          <div class="text-[10px] font-mono text-[#d4af37] uppercase tracking-widest">Kıdem Uyum Güveni</div>
+          <div class="text-3xl font-serif font-bold text-[#f3e5ab] mt-1">98.4%</div>
+          <div class="text-xs text-[#d4af37] mt-1 font-mono">DeepSeek Sovereign</div>
+        </div>
+        <div class="gold-card p-6 rounded-3xl">
+          <div class="text-[10px] font-mono text-[#d4af37] uppercase tracking-widest">Ortalama Taban Maaş</div>
+          <div class="text-3xl font-serif font-bold text-white mt-1">£135,000</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">+ Hisse opsiyonu</div>
+        </div>
+        <div class="gold-card p-6 rounded-3xl">
+          <div class="text-[10px] font-mono text-[#d4af37] uppercase tracking-widest">Telegram VIP Bot</div>
+          <div class="text-3xl font-serif font-bold text-white mt-1">Doğrudan</div>
+          <div class="text-xs text-emerald-400 mt-1 font-mono">Kişisel kanal bağlı</div>
+        </div>
+      </div>
+
+      <!-- Golden Dossier Card -->
+      <div class="gold-card p-8 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between border-b border-[#d4af37]/20 pb-4">
+          <div class="flex items-center gap-3">
+            <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#d4af37]/15 text-[#f3e5ab] border border-[#d4af37]/40 uppercase">
+              96.8% CV UYUMU
+            </span>
+            <span class="text-xs font-mono text-white/40">REF: SYN-0924</span>
+          </div>
+          <span class="text-xs font-mono text-[#d4af37]">£120,000 - £145,000</span>
+        </div>
+
+        <h3 class="text-2xl font-serif font-bold text-white">Lead AI &amp; Autonomous Systems Architect</h3>
+        <p class="text-xs text-white/60 font-mono">Synthesia • London / Remote • LinkedIn E-posta Alarmlarından Ayrıştırıldı</p>
+
+        <p class="text-xs text-white/80 leading-relaxed font-sans bg-black/40 p-4 rounded-2xl border border-white/5">
+          CV'nizdeki Next.js 16, Python/FastAPI ve bağımsız LLM ajan mimarisi pozisyonun liderlik kriterleriyle eksiksiz örtüşüyor.
+        </p>
+
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-xs font-mono text-white/40">ÖZEL SEÇİLMİŞ KÜRATÖRLÜK</span>
+          <button class="lux-press px-5 py-2.5 rounded-xl bg-[#d4af37] text-black font-bold text-xs font-mono uppercase tracking-wider">
+            Başvuruyu Başlat →
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- HOME SCREEN 2: EMERALD SOVEREIGN                       -->
+    <!-- ------------------------------------------------------ -->
+    <div id="theme-emerald" class="theme-screen hidden space-y-8">
+      
+      <!-- Top Emerald Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-emerald-500/25 gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 via-teal-700 to-black p-[1px]">
+            <div class="w-full h-full rounded-2xl bg-[#060a08] flex items-center justify-center">
+              <svg class="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono tracking-widest text-emerald-400 uppercase">Mayfair Intelligence</div>
+            <h2 class="text-2xl font-serif font-bold text-white tracking-wide">Emerald Sovereign Hub</h2>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="px-3.5 py-1.5 rounded-full bg-emerald-950/40 text-emerald-300 border border-emerald-500/30 text-xs font-mono">
+            Kriptografik Güvenlik: 256-bit
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-mono font-bold text-xs">
+            EK
+          </div>
+        </div>
+      </div>
+
+      <!-- Emerald Metrics -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="emerald-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-emerald-400 uppercase">Seçkin Pozisyonlar</div>
+          <div class="text-3xl font-bold font-mono text-white mt-1">14 Fırsat</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Eşik: %85 üzeri filtre</div>
+        </div>
+        <div class="emerald-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-emerald-400 uppercase">SearXNG ATS Doğrulaması</div>
+          <div class="text-3xl font-bold font-mono text-emerald-400 mt-1">22 Doğrudan</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Aracısız kurumsal linkler</div>
+        </div>
+        <div class="emerald-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-emerald-400 uppercase">Kıdem Skoru</div>
+          <div class="text-3xl font-bold font-mono text-white mt-1">Principal / A+</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Pazarın en üst dilimi</div>
+        </div>
+      </div>
+
+      <!-- Emerald Job Card -->
+      <div class="emerald-card p-8 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between border-b border-emerald-500/20 pb-4">
+          <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+            92.4% CV UYUMU
+          </span>
+          <span class="text-xs font-mono text-emerald-400">€130,000 + Hisse</span>
+        </div>
+
+        <h3 class="text-2xl font-serif font-bold text-white">Founding Machine Learning &amp; Agent Partner</h3>
+        <p class="text-xs text-white/60 font-mono">Mistral Ecosystem Partner • Paris / Remote • Greenhouse ATS Doğrulandı</p>
+
+        <p class="text-xs text-white/80 leading-relaxed bg-black/50 p-4 rounded-2xl border border-white/5 font-sans">
+          Dağıtık LLM çıkarımı ve streaming API yetkinlikleriniz, kurucu ekibin en acil ihtiyaç duyduğu sistem mimarisi liderliğini karşılıyor.
+        </p>
+
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-xs font-mono text-white/40">ATS DOĞRUDAN BAŞVURU</span>
+          <button class="lux-press px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs font-mono uppercase tracking-wider">
+            Detaylı Raporu Aç →
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- HOME SCREEN 3: MIDNIGHT SAPPHIRE                       -->
+    <!-- ------------------------------------------------------ -->
+    <div id="theme-sapphire" class="theme-screen hidden space-y-8">
+      
+      <!-- Top Sapphire Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-indigo-500/25 gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-600 to-black p-[1px]">
+            <div class="w-full h-full rounded-2xl bg-[#060814] flex items-center justify-center">
+              <svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono tracking-widest text-indigo-400 uppercase">Aerospace Intelligence</div>
+            <h2 class="text-2xl font-serif font-bold text-white tracking-wide">Sapphire Telemetry Command</h2>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="px-3.5 py-1.5 rounded-full bg-indigo-950/40 text-indigo-300 border border-indigo-500/30 text-xs font-mono">
+            Canlı Gecikme: 1.4s P99
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 flex items-center justify-center font-mono font-bold text-xs">
+            EK
+          </div>
+        </div>
+      </div>
+
+      <!-- Sapphire Metrics -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sapphire-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-indigo-400 uppercase">Telemetri Kuyruğu</div>
+          <div class="text-3xl font-bold font-mono text-white mt-1">Aktif</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">3 ilan skorlanıyor</div>
+        </div>
+        <div class="sapphire-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-indigo-400 uppercase">Öncelikli Eşleşme</div>
+          <div class="text-3xl font-bold font-mono text-indigo-400 mt-1">96.8% Fit</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Synthesia Systems</div>
+        </div>
+        <div class="sapphire-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-indigo-400 uppercase">Telegram Dispatch</div>
+          <div class="text-3xl font-bold font-mono text-white mt-1">Anlık</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">VIP kanalına iletildi</div>
+        </div>
+      </div>
+
+      <!-- Sapphire Job Card -->
+      <div class="sapphire-card p-8 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between border-b border-indigo-500/20 pb-4">
+          <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+            89.4% CV UYUMU
+          </span>
+          <span class="text-xs font-mono text-indigo-300">$185,000 - $210,000</span>
+        </div>
+
+        <h3 class="text-2xl font-serif font-bold text-white">Staff Design Engineer (Craft &amp; Architecture)</h3>
+        <p class="text-xs text-white/60 font-mono">Linear Studio Partner • Global Remote • Doğrulanmış İlan</p>
+
+        <p class="text-xs text-white/80 leading-relaxed bg-black/50 p-4 rounded-2xl border border-white/5 font-sans">
+          Mikro-etkileşimler, sıfır gecikmeli UI ve donanım hızlandırmalı geçiş mimarisi için aranılan nadir profil ile tam eşleşme.
+        </p>
+
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-xs font-mono text-white/40">TELEMETRİ RAPORU HAZIR</span>
+          <button class="lux-press px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs font-mono uppercase tracking-wider">
+            Dosyayı İncele →
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- HOME SCREEN 4: SAVILE ROSE GOLD & COPPER               -->
+    <!-- ------------------------------------------------------ -->
+    <div id="theme-rose" class="theme-screen hidden space-y-8">
+      
+      <!-- Top Rose Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-[#e0a996]/25 gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#e0a996] via-[#c87d69] to-black p-[1px]">
+            <div class="w-full h-full rounded-2xl bg-[#120a0e] flex items-center justify-center">
+              <svg class="w-6 h-6 text-[#e0a996]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono tracking-widest text-[#e0a996] uppercase">Bespoke Concierge</div>
+            <h2 class="text-2xl font-serif font-bold text-white tracking-wide">Savile Executive Suite</h2>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="px-3.5 py-1.5 rounded-full bg-[#e0a996]/10 text-[#f2cdc4] border border-[#e0a996]/30 text-xs font-mono">
+            Kişiye Özel Küratörlük
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-[#e0a996]/10 border border-[#e0a996]/30 text-[#e0a996] flex items-center justify-center font-mono font-bold text-xs">
+            EK
+          </div>
+        </div>
+      </div>
+
+      <!-- Rose Metrics -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="rose-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-[#e0a996] uppercase">Davetiyeli Pozisyonlar</div>
+          <div class="text-3xl font-serif font-bold text-white mt-1">12 Özel Dosya</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Yalnızca C-Level ve Staff</div>
+        </div>
+        <div class="rose-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-[#e0a996] uppercase">Ortalama Ücret</div>
+          <div class="text-3xl font-serif font-bold text-[#f2cdc4] mt-1">£140k+</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Hisse opsiyonu dahil</div>
+        </div>
+        <div class="rose-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-[#e0a996] uppercase">Mülakat Güvencesi</div>
+          <div class="text-3xl font-serif font-bold text-white mt-1">98% Doğruluk</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Kıdem uyumu onaylandı</div>
+        </div>
+      </div>
+
+      <!-- Rose Job Card -->
+      <div class="rose-card p-8 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between border-b border-[#e0a996]/20 pb-4">
+          <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#e0a996]/15 text-[#f2cdc4] border border-[#e0a996]/35">
+            96.8% UYUM DERECESİ
+          </span>
+          <span class="text-xs font-mono text-[#e0a996]">£120,000 - £145,000</span>
+        </div>
+
+        <h3 class="text-2xl font-serif font-bold text-white">Lead AI Systems Architect</h3>
+        <p class="text-xs text-white/60 font-mono">Synthesia • London / Remote • LinkedIn VIP Besleme</p>
+
+        <p class="text-xs text-white/80 leading-relaxed bg-black/40 p-4 rounded-2xl border border-white/5 font-sans">
+          Next.js ve FastAPI asenkron mimarisi üzerine kurulu otonom ajan deneyiminiz için özel olarak hazırlanmış öncelikli davet.
+        </p>
+
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-xs font-mono text-white/40">GİZLİ BAŞVURU KORUMASI</span>
+          <button class="lux-press px-5 py-2.5 rounded-xl bg-[#e0a996] text-black font-bold text-xs font-mono uppercase tracking-wider">
+            Daveti İncele →
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- HOME SCREEN 5: CARBON MONOLITH (LIQUID SILVER)         -->
+    <!-- ------------------------------------------------------ -->
+    <div id="theme-carbon" class="theme-screen hidden space-y-8">
+      
+      <!-- Top Carbon Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-white/20 gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-white via-neutral-500 to-black p-[1px]">
+            <div class="w-full h-full rounded-2xl bg-[#030303] flex items-center justify-center">
+              <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            </div>
+          </div>
+          <div>
+            <div class="text-[10px] font-mono tracking-widest text-white/60 uppercase">Monolith Precision</div>
+            <h2 class="text-2xl font-mono font-bold text-white tracking-wider">CARBON COCKPIT</h2>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="px-3.5 py-1.5 rounded-full bg-white/10 text-white border border-white/25 text-xs font-mono">
+            STATUS: 120 FPS GPU LOCK
+          </span>
+          <div class="w-9 h-9 rounded-xl bg-white text-black flex items-center justify-center font-mono font-bold text-xs">
+            EK
+          </div>
+        </div>
+      </div>
+
+      <!-- Carbon Metrics -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="carbon-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-white/50 uppercase">Taranan Kayıt</div>
+          <div class="text-3xl font-mono font-bold text-white mt-1">324 ILAN</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">SQLite 2.0 Veritabanı</div>
+        </div>
+        <div class="carbon-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-white/50 uppercase">Maksimum Fit</div>
+          <div class="text-3xl font-mono font-bold text-white mt-1">96.8%</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">DeepSeek LLM V3</div>
+        </div>
+        <div class="carbon-card p-6 rounded-3xl">
+          <div class="text-xs font-mono text-white/50 uppercase">Şifreli Kuyruk</div>
+          <div class="text-3xl font-mono font-bold text-white mt-1">256-BIT</div>
+          <div class="text-xs text-white/40 mt-1 font-mono">Fernet Güvenliği</div>
+        </div>
+      </div>
+
+      <!-- Carbon Job Card -->
+      <div class="carbon-card p-8 rounded-3xl space-y-4">
+        <div class="flex items-center justify-between border-b border-white/15 pb-4">
+          <span class="px-3 py-1 rounded-full text-xs font-mono font-bold bg-white text-black uppercase">
+            96.8% CONFIDENCE
+          </span>
+          <span class="text-xs font-mono text-white">£120,000 - £145,000</span>
+        </div>
+
+        <h3 class="text-2xl font-mono font-bold text-white">Lead AI Systems Architect</h3>
+        <p class="text-xs text-white/60 font-mono">Synthesia • London / Remote • LinkedIn Sync</p>
+
+        <p class="text-xs text-white/80 leading-relaxed bg-black/60 p-4 rounded-2xl border border-white/10 font-mono">
+          Next.js 16, Python FastAPI ve bağımsız LLM ajan mimarisi için tam yetkinlik eşleşmesi sağlandı.
+        </p>
+
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-xs font-mono text-white/40">ZERO-COMPROMISE DISPATCH</span>
+          <button class="lux-press px-5 py-2.5 rounded-xl bg-white text-black font-bold text-xs font-mono uppercase tracking-wider">
+            Dosyayı Aç →
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- JAVASCRIPT THEME CONTROLLER                              -->
+  <!-- ======================================================== -->
+  <script>
+    const themeButtons = document.querySelectorAll('.theme-tab-btn');
+    const themeScreens = document.querySelectorAll('.theme-screen');
+
+    themeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTheme = btn.dataset.theme;
+
+        // Reset all buttons
+        themeButtons.forEach(b => {
+          b.className = "theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white/60 hover:text-white transition-all";
+        });
+
+        // Set active button style based on target
+        if (targetTheme === 'theme-gold') {
+          btn.className = "theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-black bg-[#d4af37] font-bold shadow-md transition-all";
+        } else if (targetTheme === 'theme-emerald') {
+          btn.className = "theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-black bg-emerald-400 font-bold shadow-md transition-all";
+        } else if (targetTheme === 'theme-sapphire') {
+          btn.className = "theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white bg-indigo-600 font-bold shadow-md transition-all";
+        } else if (targetTheme === 'theme-rose') {
+          btn.className = "theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-black bg-[#e0a996] font-bold shadow-md transition-all";
+        } else if (targetTheme === 'theme-carbon') {
+          btn.className = "theme-tab-btn lux-press px-3.5 py-1.5 rounded-xl text-xs font-mono uppercase tracking-wider text-black bg-white font-bold shadow-md transition-all";
+        }
+
+        // Show screen
+        themeScreens.forEach(screen => {
+          if (screen.id === targetTheme) {
+            screen.classList.remove('hidden');
+          } else {
+            screen.classList.add('hidden');
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

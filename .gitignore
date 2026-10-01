@@ -36,3 +36,7 @@ next-env.d.ts
 
 # Next.js 16 writes CLAUDE.md on every `next dev` run; AGENTS.md is tracked instead.
 frontend/CLAUDE.md
+
+# Local tools
+cloudflared
+leaflet/

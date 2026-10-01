@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Hunter — AI Job Intelligence & Match Engine</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+      --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+      --spring-bouncy: cubic-bezier(0.175, 0.885, 0.32, 1.25);
+    }
+
+    body {
+      background-color: #08090b;
+      color: #f1f3f9;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+    }
+
+    /* Glassmorphism Layers */
+    .glass-surface {
+      background: rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(28px) saturate(190%);
+      -webkit-backdrop-filter: blur(28px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      transition: transform 220ms var(--ease-out), border-color 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
+    }
+    .glass-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 16px 32px -10px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Emil Kowalski 160ms scale(0.97) feedback */
+    .press-scale {
+      transition: transform 160ms var(--ease-out), background-color 160ms ease, opacity 160ms ease;
+    }
+    .press-scale:active {
+      transform: scale(0.97);
+    }
+
+    /* Dual Clip-Path Segmented Indicator */
+    .tab-pill-slider {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      border-radius: 12px;
+      background: #ffffff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+      transition: left 260ms var(--ease-out), width 260ms var(--ease-out);
+    }
+
+    /* Blur Mask Crossfade */
+    .blur-crossfade {
+      transition: filter 180ms ease, opacity 180ms ease;
+    }
+    .blur-mask-active {
+      filter: blur(3px);
+      opacity: 0.6;
+    }
+
+    /* Slide-over Drawer */
+    #detailDrawer {
+      transition: transform 380ms var(--ease-drawer), opacity 380ms var(--ease-drawer);
+    }
+    #drawerBackdrop {
+      transition: opacity 300ms ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-blue-500/30 pb-20">
+
+  <!-- ========================================== -->
+  <!-- TOP NAV & DYNAMIC ISLAND STATUS CAPSULE    -->
+  <!-- ========================================== -->
+  <header class="sticky top-0 z-40 glass-surface border-b border-white/10 px-4 md:px-8 py-3.5 mb-8">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-500 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/25">
+          🎯
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-base font-bold tracking-tight text-white">Job Hunter</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">Aşama 4</span>
+          </div>
+          <p class="text-xs text-white/50">LinkedIn + Web Discovery & CV Match</p>
+        </div>
+      </div>
+
+      <!-- Center: Dynamic Island Sync Capsule (Apple Style) -->
+      <div id="syncCapsule" class="hidden md:flex items-center gap-3 px-4 py-1.5 rounded-full bg-black/60 border border-white/15 shadow-inner cursor-pointer hover:border-white/30 transition-all select-none">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span class="text-xs font-medium text-white/90">Gmail & Outlook Bağlı</span>
+        <span class="text-white/20">•</span>
+        <span class="text-[11px] font-mono text-white/50">Son tarama: 3 dk önce</span>
+        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          +2 Yeni İlan
+        </span>
+      </div>
+
+      <!-- Right: User & Telegram Status -->
+      <div class="flex items-center gap-3">
+        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
+          <span class="text-white/40">Telegram:</span>
+          <span class="text-emerald-400 font-semibold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Aktif
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2.5 pl-2 border-l border-white/10">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center font-bold text-xs text-white shadow">
+            EK
+          </div>
+          <div class="hidden lg:block text-left">
+            <div class="text-xs font-semibold text-white leading-tight">Enis Korkut</div>
+            <div class="text-[10px] text-white/50">Senior AI / Full-Stack CV</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ========================================== -->
+  <!-- MAIN WORKSPACE CONTAINER                   -->
+  <!-- ========================================== -->
+  <main class="max-w-7xl mx-auto px-4 md:px-8 space-y-8">
+
+    <!-- HERO METRICS: 4 Glass Stat Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: Toplam İlan -->
+      <div class="glass-card p-5 rounded-3xl relative overflow-hidden group">
+        <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+          <span>Toplam Keşfedilen İlan</span>
+          <span class="text-blue-400 font-semibold font-mono">324 İlan</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-black tracking-tight text-white">48</span>
+          <span class="text-xs text-emerald-400 font-semibold">+6 bugün</span>
+        </div>
+        <div class="text-[11px] text-white/40 mt-1">LinkedIn e-posta + SearXNG ATS</div>
+        <div class="mt-4 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full" style="width: 82%;"></div>
+        </div>
+      </div>
+
+      <!-- Card 2: Yüksek Uyum (85%+) -->
+      <div class="glass-card p-5 rounded-3xl relative overflow-hidden group">
+        <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+          <span>Yüksek CV Uyumu (85%+)</span>
+          <span class="text-emerald-400 font-semibold font-mono">🎯 Hedef</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-black tracking-tight text-emerald-400">14</span>
+          <span class="text-xs text-white/60">öncelikli fırsat</span>
+        </div>
+        <div class="text-[11px] text-white/40 mt-1">DeepSeek LLM ile skorlandı</div>
+        <div class="mt-4 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-gradient-to-r from-emerald-400 to-teal-400 h-full rounded-full" style="width: 94%;"></div>
+        </div>
+      </div>
+
+      <!-- Card 3: Bekleyen Analiz -->
+      <div class="glass-card p-5 rounded-3xl relative overflow-hidden group">
+        <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+          <span>Kuyrukta Skorlanan</span>
+          <span class="text-amber-400 font-semibold font-mono">Canlı</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-black tracking-tight text-white">3</span>
+          <span class="text-xs text-amber-400 font-semibold">kalan</span>
+        </div>
+        <div class="text-[11px] text-white/40 mt-1">Ortalama analiz süresi ~2.4s</div>
+        <div class="mt-4 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-gradient-to-r from-amber-400 to-orange-500 h-full rounded-full" style="width: 45%;"></div>
+        </div>
+      </div>
+
+      <!-- Card 4: Web Keşfi & ATS Tazelik -->
+      <div class="glass-card p-5 rounded-3xl relative overflow-hidden group">
+        <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+          <span>ATS Doğrudan Keşif</span>
+          <span class="text-purple-400 font-semibold font-mono">SearXNG</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-black tracking-tight text-white">22</span>
+          <span class="text-xs text-purple-400 font-semibold">Greenhouse / Lever</span>
+        </div>
+        <div class="text-[11px] text-white/40 mt-1">SSRF korumalı JSON-LD ayrıştırma</div>
+        <div class="mt-4 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-gradient-to-r from-purple-500 to-pink-500 h-full rounded-full" style="width: 68%;"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- INTERACTIVE FILTER & SEARCH BAR (EMIL PILL)-->
+    <!-- ========================================== -->
+    <section class="glass-surface p-4 rounded-3xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      
+      <!-- Fluid Tab Indicator (Emil Kowalski style) -->
+      <div class="relative bg-black/60 p-1 rounded-2xl border border-white/10 flex items-center select-none overflow-x-auto max-w-full" id="filterTabs">
+        <!-- Active sliding pill -->
+        <div id="pillSlider" class="tab-pill-slider"></div>
+
+        <button class="job-tab-btn relative z-10 px-4 py-2 text-xs font-bold text-black transition-colors" data-filter="all">
+          Tüm İlanlar (48)
+        </button>
+        <button class="job-tab-btn relative z-10 px-4 py-2 text-xs font-bold text-white/60 hover:text-white transition-colors" data-filter="match">
+          🎯 Yüksek Uyum (85%+)
+        </button>
+        <button class="job-tab-btn relative z-10 px-4 py-2 text-xs font-bold text-white/60 hover:text-white transition-colors" data-filter="fresh">
+          ⚡ Bugün Bulunan (6)
+        </button>
+        <button class="job-tab-btn relative z-10 px-4 py-2 text-xs font-bold text-white/60 hover:text-white transition-colors" data-filter="remote">
+          🌐 Sadece Remote (32)
+        </button>
+      </div>
+
+      <!-- Search & Work Mode Quick Filters -->
+      <div class="flex items-center gap-2.5">
+        <div class="relative flex-1 sm:w-64">
+          <input type="text" placeholder="Pozisyon, şirket veya beceri..." class="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-white/40 focus:outline-none focus:border-blue-500/60 transition-all">
+          <span class="absolute right-3 top-2 text-[10px] font-mono text-white/30 border border-white/10 px-1.5 py-0.5 rounded">⌘K</span>
+        </div>
+        
+        <button class="press-scale px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-500/20 flex items-center gap-1.5 transition-all">
+          <span>🔄 Şimdi Tara</span>
+        </button>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- JOB FEED CONTAINER (STAGGERED CARDS)       -->
+    <!-- ========================================== -->
+    <section class="space-y-4" id="jobFeed">
+
+      <!-- JOB CARD 1: 96% Match (Synthesia) -->
+      <div class="job-card glass-card p-6 rounded-3xl flex flex-col lg:flex-row lg:items-center justify-between gap-6" data-category="match fresh remote">
+        <div class="flex items-start gap-4 flex-1">
+          <!-- Company Avatar -->
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-900 to-indigo-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shrink-0">
+            SY
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-base font-bold text-white hover:text-blue-400 transition-colors cursor-pointer">
+                Senior AI & Full-Stack Engineer
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 96% CV Uyumu
+              </span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                🔥 42 dk önce (Taze)
+              </span>
+            </div>
+
+            <div class="flex items-center gap-3 text-xs text-white/60">
+              <span class="text-white font-medium">Synthesia</span>
+              <span>•</span>
+              <span>Londra / Global Remote</span>
+              <span>•</span>
+              <span class="font-mono text-emerald-300">£110,000 - £135,000</span>
+              <span>•</span>
+              <span class="text-white/40">LinkedIn E-posta ile geldi</span>
+            </div>
+
+            <!-- AI Reason Highlight -->
+            <p class="text-xs text-white/70 leading-relaxed max-w-3xl bg-white/[0.02] p-3 rounded-xl border border-white/5">
+              <strong class="text-emerald-400">Yapay Zekâ Eşleşme Notu:</strong> CV'nizdeki Next.js 16, Python/FastAPI ve LLM Autonomous Agent mimarisi ilanın temel gereksinimleriyle birebir örtüşüyor. Senior seviye mimari liderliği bekleniyor.
+            </p>
+
+            <!-- Tags -->
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Next.js</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">FastAPI</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">PyTorch</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Autonomous Agents</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-emerald-500/10 text-emerald-300">Remote</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 justify-center">
+          <button class="open-drawer-btn press-scale w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10" data-job="synthesia">
+            <span>📊 CV Analizini Aç</span>
+          </button>
+          
+          <a href="#" class="press-scale w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/20">
+            <span>Hemen Başvur ↗</span>
+          </a>
+
+          <!-- Asymmetric Hold to Archive Button -->
+          <div class="relative w-full sm:w-auto">
+            <button class="hold-archive-btn press-scale w-full px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-red-950/30 text-white/40 hover:text-red-400 text-[11px] border border-white/5 flex items-center justify-center gap-1 relative overflow-hidden">
+              <div class="hold-archive-fill absolute inset-0 bg-red-600/40 text-white flex items-center justify-center text-[10px]" style="clip-path: inset(0 100% 0 0);"></div>
+              <span class="relative z-10">Arşivle (Basılı Tut)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- JOB CARD 2: 91% Match (Mistral AI Partner) -->
+      <div class="job-card glass-card p-6 rounded-3xl flex flex-col lg:flex-row lg:items-center justify-between gap-6" data-category="match fresh">
+        <div class="flex items-start gap-4 flex-1">
+          <!-- Company Avatar -->
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600 to-rose-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shrink-0">
+            MS
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-base font-bold text-white hover:text-blue-400 transition-colors cursor-pointer">
+                Founding AI Engineer & Agent Architect
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 91% CV Uyumu
+              </span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                ⚡ SearXNG ATS (Greenhouse)
+              </span>
+            </div>
+
+            <div class="flex items-center gap-3 text-xs text-white/60">
+              <span class="text-white font-medium">Mistral Labs Partner</span>
+              <span>•</span>
+              <span>Paris / Hybrid or Remote</span>
+              <span>•</span>
+              <span class="font-mono text-emerald-300">€120,000 + Hisse Opsiyonu</span>
+              <span>•</span>
+              <span class="text-white/40">Resmi ATS Doğrudan Keşfi</span>
+            </div>
+
+            <p class="text-xs text-white/70 leading-relaxed max-w-3xl bg-white/[0.02] p-3 rounded-xl border border-white/5">
+              <strong class="text-blue-400">Yapay Zekâ Eşleşme Notu:</strong> Dağıtık sistemler ve streaming API konusundaki tecrübeniz çok yüksek puan aldı. Tek eksik: C++ çekirdek optimizasyonu ilanda tercih sebebi olarak geçiyor.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Python 3.12</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">FastAPI</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">vLLM</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Docker & Kubernetes</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 justify-center">
+          <button class="open-drawer-btn press-scale w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10" data-job="mistral">
+            <span>📊 CV Analizini Aç</span>
+          </button>
+          
+          <a href="#" class="press-scale w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/20">
+            <span>Greenhouse'da Aç ↗</span>
+          </a>
+
+          <div class="relative w-full sm:w-auto">
+            <button class="hold-archive-btn press-scale w-full px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-red-950/30 text-white/40 hover:text-red-400 text-[11px] border border-white/5 flex items-center justify-center gap-1 relative overflow-hidden">
+              <div class="hold-archive-fill absolute inset-0 bg-red-600/40 text-white flex items-center justify-center text-[10px]" style="clip-path: inset(0 100% 0 0);"></div>
+              <span class="relative z-10">Arşivle (Basılı Tut)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- JOB CARD 3: 88% Match (Linear / Vercel Ecosystem) -->
+      <div class="job-card glass-card p-6 rounded-3xl flex flex-col lg:flex-row lg:items-center justify-between gap-6" data-category="match remote">
+        <div class="flex items-start gap-4 flex-1">
+          <!-- Company Avatar -->
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-700 to-pink-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shrink-0">
+            LN
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-base font-bold text-white hover:text-blue-400 transition-colors cursor-pointer">
+                Staff Frontend Design Engineer (Craft & Motion)
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 88% CV Uyumu
+              </span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/10 text-white/60">
+                1 gün önce
+              </span>
+            </div>
+
+            <div class="flex items-center gap-3 text-xs text-white/60">
+              <span class="text-white font-medium">Linear Studio Partner</span>
+              <span>•</span>
+              <span>Tamamen Uzaktan (Global Remote)</span>
+              <span>•</span>
+              <span class="font-mono text-emerald-300">$160,000 - $185,000</span>
+            </div>
+
+            <p class="text-xs text-white/70 leading-relaxed max-w-3xl bg-white/[0.02] p-3 rounded-xl border border-white/5">
+              <strong class="text-purple-400">Yapay Zekâ Eşleşme Notu:</strong> Emil Kowalski ve Apple Design prensipleri, mikro-etkileşimler ve sıfır gecikmeli UI geliştirme yeteneğiniz tam aranılan kriter.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">React 19 / Next.js</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Framer Motion</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Tailwind CSS 4</span>
+              <span class="px-2.5 py-1 rounded-lg text-[11px] bg-white/5 text-white/70">Design Systems</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 justify-center">
+          <button class="open-drawer-btn press-scale w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10" data-job="linear">
+            <span>📊 CV Analizini Aç</span>
+          </button>
+          
+          <a href="#" class="press-scale w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/20">
+            <span>İlana Git ↗</span>
+          </a>
+
+          <div class="relative w-full sm:w-auto">
+            <button class="hold-archive-btn press-scale w-full px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-red-950/30 text-white/40 hover:text-red-400 text-[11px] border border-white/5 flex items-center justify-center gap-1 relative overflow-hidden">
+              <div class="hold-archive-fill absolute inset-0 bg-red-600/40 text-white flex items-center justify-center text-[10px]" style="clip-path: inset(0 100% 0 0);"></div>
+              <span class="relative z-10">Arşivle (Basılı Tut)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- APPLE FLUID SLIDE-OVER DRAWER (CV ANALYSIS)-->
+  <!-- ========================================== -->
+  <div id="drawerBackdrop" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 opacity-0 pointer-events-none transition-opacity duration-300">
+    <div id="detailDrawer" class="absolute top-0 right-0 bottom-0 w-full max-w-xl glass-surface border-l border-white/15 p-6 md:p-8 flex flex-col justify-between overflow-y-auto transform translate-x-full">
+      
+      <!-- Drawer Header -->
+      <div>
+        <div class="flex items-center justify-between pb-5 border-b border-white/10">
+          <div class="flex items-center gap-2.5">
+            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+            <h3 class="text-lg font-bold text-white" id="drawerTitle">Detaylı CV Analizi</h3>
+          </div>
+          <button id="closeDrawerBtn" class="press-scale w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm">
+            ✕
+          </button>
+        </div>
+
+        <!-- Overall Score Ring & Breakdown -->
+        <div class="my-6 p-6 rounded-3xl bg-gradient-to-br from-emerald-950/40 to-black border border-emerald-500/20 flex items-center justify-between">
+          <div>
+            <div class="text-xs uppercase tracking-wider text-emerald-400 font-mono font-bold">Genel Uyum Skoru</div>
+            <div class="text-4xl font-black text-white mt-1" id="drawerScore">96%</div>
+            <p class="text-xs text-white/60 mt-1">DeepSeek LLM • Eşik Değeri: 80% (Aşıldı)</p>
+          </div>
+          <div class="w-16 h-16 rounded-full border-4 border-emerald-400 flex items-center justify-center font-bold text-emerald-300 text-lg shadow-lg shadow-emerald-500/20">
+            A+
+          </div>
+        </div>
+
+        <!-- Analysis Sections -->
+        <div class="space-y-4">
+          <!-- Strong Matches -->
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div class="text-xs font-bold text-emerald-400 flex items-center gap-2 mb-2">
+              <span>✓</span> Güçlü Eşleşen Beceriler
+            </div>
+            <ul class="text-xs text-white/70 space-y-1.5">
+              <li>• <strong>Modern Stack:</strong> Next.js App Router, TypeScript, Tailwind 4</li>
+              <li>• <strong>Backend & AI:</strong> Python, FastAPI, OpenAI uyumlu LLM Entegrasyonu</li>
+              <li>• <strong>Mimari:</strong> Oku-yaz temiz kod pratikleri, Redis/SQLite kalıcı kuyruk</li>
+            </ul>
+          </div>
+
+          <!-- Missing / Gap -->
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div class="text-xs font-bold text-amber-400 flex items-center gap-2 mb-2">
+              <span>!</span> Dikkat Edilmesi Gereken Noktalar
+            </div>
+            <ul class="text-xs text-white/70 space-y-1.5">
+              <li>• İlanda 5+ yıl resmi deneyim aranıyor; CV'niz bu kapsama tam oturuyor.</li>
+              <li>• Başvuru mektubunda autonomous agent projelerinizi vurgulamanız tavsiye edilir.</li>
+            </ul>
+          </div>
+
+          <!-- Telegram Notification Sent -->
+          <div class="p-4 rounded-2xl bg-blue-950/20 border border-blue-500/20 flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2">
+              <span>📱</span>
+              <span class="text-blue-300">Telegram Bildirimi İletildi:</span>
+            </div>
+            <span class="text-white/60 font-mono">Bugün 18:24</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drawer Bottom Actions -->
+      <div class="pt-6 border-t border-white/10 flex items-center gap-3">
+        <button id="drawerCloseAction" class="press-scale flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold">
+          Kapat
+        </button>
+        <button class="press-scale flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-500/25">
+          İlana Git ve Başvur
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- JAVASCRIPT CONTROLLERS (SPRING LOGIC)       -->
+  <!-- ========================================== -->
+  <script>
+    // --- Segmented Tab Indicator Logic ---
+    const tabButtons = document.querySelectorAll('.job-tab-btn');
+    const pill = document.getElementById('pillSlider');
+    const jobCards = document.querySelectorAll('.job-card');
+
+    function updatePillPosition(btn) {
+      pill.style.left = `${btn.offsetLeft}px`;
+      pill.style.width = `${btn.offsetWidth}px`;
+
+      tabButtons.forEach(b => {
+        b.classList.remove('text-black');
+        b.classList.add('text-white/60');
+      });
+      btn.classList.remove('text-white/60');
+      btn.classList.add('text-black');
+    }
+
+    // Init first pill
+    if (tabButtons.length > 0) {
+      setTimeout(() => updatePillPosition(tabButtons[0]), 100);
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        updatePillPosition(btn);
+        const filter = btn.dataset.filter;
+
+        jobCards.forEach(card => {
+          if (filter === 'all') {
+            card.style.display = 'flex';
+          } else {
+            const categories = card.dataset.category || '';
+            if (categories.includes(filter)) {
+              card.style.display = 'flex';
+            } else {
+              card.style.display = 'none';
+            }
+          }
+        });
+      });
+    });
+
+    // --- Slide-over Drawer Logic ---
+    const drawerBackdrop = document.getElementById('drawerBackdrop');
+    const drawer = document.getElementById('detailDrawer');
+    const openDrawerBtns = document.querySelectorAll('.open-drawer-btn');
+    const closeDrawerBtn = document.getElementById('closeDrawerBtn');
+    const drawerCloseAction = document.getElementById('drawerCloseAction');
+
+    function openDrawer(jobKey) {
+      drawerBackdrop.classList.remove('opacity-0', 'pointer-events-none');
+      drawer.style.transform = 'translateX(0%)';
+    }
+
+    function closeDrawer() {
+      drawer.style.transform = 'translateX(100%)';
+      drawerBackdrop.classList.add('opacity-0', 'pointer-events-none');
+    }
+
+    openDrawerBtns.forEach(btn => {
+      btn.addEventListener('click', () => openDrawer(btn.dataset.job));
+    });
+
+    closeDrawerBtn.addEventListener('click', closeDrawer);
+    drawerCloseAction.addEventListener('click', closeDrawer);
+    drawerBackdrop.addEventListener('click', (e) => {
+      if (e.target === drawerBackdrop) closeDrawer();
+    });
+
+    // --- Hold to Archive (Emil Kowalski Asymmetric Hold) ---
+    const holdBtns = document.querySelectorAll('.hold-archive-btn');
+
+    holdBtns.forEach(btn => {
+      const fill = btn.querySelector('.hold-archive-fill');
+      let timer = null;
+
+      btn.addEventListener('pointerdown', () => {
+        fill.style.transition = 'clip-path 1600ms linear';
+        fill.style.clipPath = 'inset(0 0 0 0)';
+
+        timer = setTimeout(() => {
+          fill.style.transition = 'none';
+          const card = btn.closest('.job-card');
+          card.style.transition = 'opacity 300ms ease, transform 300ms ease';
+          card.style.opacity = '0';
+          card.style.transform = 'scale(0.95)';
+          setTimeout(() => card.style.display = 'none', 300);
+        }, 1600);
+      });
+
+      function cancelArchive() {
+        clearTimeout(timer);
+        fill.style.transition = 'clip-path 160ms cubic-bezier(0.23, 1, 0.32, 1)';
+        fill.style.clipPath = 'inset(0 100% 0 0)';
+      }
+
+      btn.addEventListener('pointerup', cancelArchive);
+      btn.addEventListener('pointerleave', cancelArchive);
+    });
+  </script>
+</body>
+</html>

@@ -209,3 +209,126 @@
     filter: blur(0);
   }
 }
+
+/* Executive Cockpit Luxury Tokens */
+:root {
+  --silver: #ffffff;
+  --silver-muted: #a1a1aa;
+  --silver-border: rgba(255, 255, 255, 0.16);
+  --carbon: #020203;
+  --carbon-surface: #08080a;
+  --carbon-card: #060608;
+  --ease-lux: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Prevent WebGL Canvas from blowing out mobile viewport width */
+#globeContainer,
+#globeContainer canvas,
+.scene-container,
+.scene-container canvas {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Tactile Press Scale */
+.lux-press {
+  transition: transform 160ms var(--ease-lux), background-color 160ms ease, opacity 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.lux-press:active {
+  transform: scale(0.96);
+}
+
+/* Monolith Carbon Glass */
+.carbon-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%), var(--carbon-card);
+  border: 1px solid var(--silver-border);
+  box-shadow: 0 24px 60px -15px rgba(0, 0, 0, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: border-color 220ms ease, box-shadow 220ms ease, transform 220ms var(--ease-lux);
+}
+.carbon-card:hover {
+  border-color: rgba(255, 255, 255, 0.38);
+  box-shadow: 0 30px 70px -15px rgba(0, 0, 0, 1), 0 0 30px -8px rgba(255, 255, 255, 0.12);
+}
+
+/* Liquid Silver Shimmer Button */
+.silver-btn {
+  background: linear-gradient(135deg, #ffffff 0%, #d4d4d8 50%, #ffffff 100%);
+  color: #000000;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  box-shadow: 0 10px 25px -5px rgba(255, 255, 255, 0.3), inset 0 1px 1px #ffffff;
+  transition: all 180ms var(--ease-lux);
+}
+.silver-btn:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 14px 34px -5px rgba(255, 255, 255, 0.45);
+  transform: translateY(-1px);
+}
+.silver-btn:active {
+  transform: scale(0.96);
+}
+
+/* 3D Globe HTML Marker Styles */
+.globe-marker-wrap {
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  transform: translate(-50%, -50%);
+  transition: transform 200ms var(--ease-lux);
+}
+.globe-marker-wrap:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  z-index: 1000;
+}
+.globe-marker-active .marker-tag {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 25px rgba(255, 255, 255, 0.9) !important;
+}
+.globe-marker-active .marker-core {
+  box-shadow: 0 0 20px 4px #ffffff !important;
+  background: #ffffff !important;
+}
+
+/* 3D Globe Container & Viewport Centering */
+#globeContainer {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#globeContainer canvas {
+  display: block !important;
+  outline: none;
+}
+
+/* Radar scan grid overlay */
+.radar-grid-bg {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+
+/* Mobile Momentum Touch */
+.touch-pan-x {
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbars cleanly */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}

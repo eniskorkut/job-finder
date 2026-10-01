@@ -146,6 +146,7 @@ function Brand() {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { error, refetch } = useSession();
   const router = useRouter();
 
@@ -155,6 +156,10 @@ function Shell({ children }: { children: React.ReactNode }) {
       router.replace("/login");
     }
   }, [error, router]);
+
+  if (pathname === "/") {
+    return <main className="min-h-screen bg-[#020203] text-[#f4f4f5]">{children}</main>;
+  }
 
   return (
     <div className="min-h-dvh bg-canvas lg:grid lg:grid-cols-[260px_1fr]">

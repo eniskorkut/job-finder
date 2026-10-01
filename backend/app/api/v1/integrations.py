@@ -15,6 +15,8 @@ from app.schemas.common import MessageResponse
 from app.schemas.integration import (
     AccountTestResponse,
     ConnectResponse,
+    CrawlSiteRequest,
+    CrawlSiteResponse,
     IntegrationsResponse,
     MailAccountRead,
     MailAccountUpdateRequest,
@@ -23,10 +25,13 @@ from app.schemas.integration import (
     TelegramConfigRequest,
     TelegramDetectResponse,
     TelegramTestResponse,
+    VerifySitesRequest,
+    VerifySitesResponse,
 )
 from app.services.auth_service import AuthService
 from app.services.integration_service import IntegrationService
 from app.services.oauth_service import OAuthClientService, OAuthFlowService
+from app.services.site_crawler_service import SiteCrawlerService
 from app.services.telegram_service import TelegramConfigService
 
 logger = logging.getLogger("jobhunter.api.integrations")
@@ -316,3 +321,22 @@ def unlink_telegram(user: CurrentUser, db: DbSession) -> dict:
     status = service.disconnect(user)
     db.commit()
     return {**status, "message": "Telegram bağlantısı kaldırıldı."}
+
+
+# --- Custom Career Sites and ATS Crawler --------------------------------
+@router.post("/custom-sites/crawl", response_model=CrawlSiteResponse)
+async def crawl_custom_site(
+    payload: CrawlSiteRequest, user: CurrentUser, db: DbSession
+) -> CrawlSiteResponse:
+    """Crawl a custom company career site or ATS URL and ingest its job postings."""
+    service = SiteCrawlerService(db)
+    return await service.crawl_site(user, payload.url)
+
+
+@router.post("/custom-sites/verify", response_model=VerifySitesResponse)
+async def verify_custom_sites(
+    payload: VerifySitesRequest, user: CurrentUser, db: DbSession
+) -> VerifySitesResponse:
+    """Verify reachability and job counts across a list of career sites / ATS domains."""
+    service = SiteCrawlerService(db)
+    return await service.verify_sites(payload.sites)

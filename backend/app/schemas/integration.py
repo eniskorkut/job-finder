@@ -169,3 +169,47 @@ class TelegramTestResponse(BaseModel):
     message: str
     status: str
     message_id: int | None = None
+
+
+# --- Custom Sites and ATS Crawler ---
+class CrawlSiteRequest(BaseModel):
+    url: str = Field(min_length=3, max_length=1000)
+
+
+class CrawlJobItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    company: str
+    location: str | None = None
+    url: str | None = None
+    source: str
+    is_new: bool
+
+
+class CrawlSiteResponse(BaseModel):
+    success: bool
+    url: str
+    jobs_found: int
+    jobs_created: int
+    jobs: list[CrawlJobItem] = Field(default_factory=list)
+    message: str
+
+
+class VerifySitesRequest(BaseModel):
+    sites: list[str] = Field(default_factory=list)
+
+
+class SiteVerificationItem(BaseModel):
+    site: str
+    status: str
+    status_code: int | None = None
+    jobs_found: int = 0
+    message: str | None = None
+
+
+class VerifySitesResponse(BaseModel):
+    success: bool
+    total_checked: int
+    active_sites: int
+    results: list[SiteVerificationItem]
+    message: str

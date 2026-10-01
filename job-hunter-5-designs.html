@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Hunter — 5 Emojisiz Arayüz Tasarımı</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+      --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    body {
+      background-color: #07080a;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+    }
+
+    /* Emil Kowalski 160ms scale(0.97) feedback */
+    .press-action {
+      transition: transform 160ms var(--ease-out), background-color 160ms ease, opacity 160ms ease;
+    }
+    .press-action:active {
+      transform: scale(0.97);
+    }
+
+    /* Custom Glass Panel */
+    .cupertino-glass {
+      background: rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(32px) saturate(190%);
+      -webkit-backdrop-filter: blur(32px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    /* Segmented pill sliding transition */
+    .sliding-pill {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      transition: left 240ms var(--ease-out), width 240ms var(--ease-out);
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 antialiased selection:bg-blue-500/30">
+
+  <!-- ======================================================== -->
+  <!-- HEADER & DESIGN SELECTOR                                 -->
+  <!-- ======================================================== -->
+  <header class="max-w-7xl mx-auto mb-8 pb-6 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Sıfır Emoji • Yüksek Zanaat ve Tipografi
+        </span>
+        <span class="text-xs text-white/40">Job Hunter Tasarım Sistemi</span>
+      </div>
+      <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-white">5 Farklı Arayüz Tasarımı</h1>
+      <p class="text-sm text-white/50 mt-1">İhtiyacınıza ve marka dilinize en uygun tasarımı seçip tüm interaktif detaylarıyla deneyimleyin.</p>
+    </div>
+
+    <!-- Active Design Indicator Info -->
+    <div class="flex items-center gap-3">
+      <div class="text-right hidden sm:block">
+        <div class="text-xs text-white font-medium">Apple & Emil Kowalski İlkeleri</div>
+        <div class="text-[11px] text-white/40 font-mono">1:1 Tracking • Spring Physics</div>
+      </div>
+      <div class="w-10 h-10 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-white">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+      </div>
+    </div>
+  </header>
+
+  <!-- 5 DESIGN SELECTOR TABS -->
+  <nav class="max-w-7xl mx-auto mb-8">
+    <div class="p-1.5 rounded-2xl bg-white/[0.03] border border-white/10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
+      <button class="nav-style-btn press-action px-3.5 py-3 rounded-xl text-xs font-semibold text-white bg-white/15 border border-white/20 shadow transition-all flex flex-col items-start gap-1" data-target="design-linear">
+        <span class="text-[10px] text-blue-400 font-mono">01. LINEAR STİL</span>
+        <span class="truncate">Monokrom & Hassasiyet</span>
+      </button>
+
+      <button class="nav-style-btn press-action px-3.5 py-3 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all flex flex-col items-start gap-1" data-target="design-cupertino">
+        <span class="text-[10px] text-white/40 font-mono">02. APPLE GLASS</span>
+        <span class="truncate">Akışkan Cam & Derinlik</span>
+      </button>
+
+      <button class="nav-style-btn press-action px-3.5 py-3 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all flex flex-col items-start gap-1" data-target="design-editorial">
+        <span class="text-[10px] text-white/40 font-mono">03. İSVİÇRE EDİTÖRYAL</span>
+        <span class="truncate">Tipografi & Çizgi</span>
+      </button>
+
+      <button class="nav-style-btn press-action px-3.5 py-3 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all flex flex-col items-start gap-1" data-target="design-split">
+        <span class="text-[10px] text-white/40 font-mono">04. AI COMMAND RADAR</span>
+        <span class="truncate">İkili Bölme & Telemetri</span>
+      </button>
+
+      <button class="nav-style-btn press-action px-3.5 py-3 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all flex flex-col items-start gap-1" data-target="design-warm">
+        <span class="text-[10px] text-white/40 font-mono">05. WARM STUDIO</span>
+        <span class="truncate">İskandinav & Dokunsal</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ======================================================== -->
+  <!-- MAIN DISPLAY WRAPPER                                     -->
+  <!-- ======================================================== -->
+  <main class="max-w-7xl mx-auto">
+
+    <!-- ------------------------------------------------------ -->
+    <!-- TASARIM 1: LINEAR MONOCHROME & HIGH-PRECISION          -->
+    <!-- ------------------------------------------------------ -->
+    <section id="design-linear" class="design-page">
+      <div class="p-6 md:p-8 rounded-3xl bg-[#0b0c0e] border border-white/10 shadow-2xl">
+        
+        <!-- Header Strip -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-white/10 gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-white text-black flex items-center justify-center font-bold font-mono text-sm">
+              JH
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-sm font-bold text-white tracking-tight">Job Hunter / Feed</h2>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-white/10 text-white/70">v4.2 PROD</span>
+              </div>
+              <p class="text-xs text-white/40 font-mono">Sync: Gmail (OK) • Outlook (OK) • SearXNG (Active)</p>
+            </div>
+          </div>
+
+          <!-- Linear Segmented Tab -->
+          <div class="relative bg-black/80 p-1 rounded-xl border border-white/10 flex items-center select-none" id="linearTabs">
+            <div id="linearPill" class="sliding-pill" style="left: 4px; width: 104px;"></div>
+            <button class="linear-tab-btn relative z-10 px-3 py-1.5 text-xs font-semibold text-black transition-colors" data-idx="0">Tüm İlanlar</button>
+            <button class="linear-tab-btn relative z-10 px-3 py-1.5 text-xs font-semibold text-white/60 hover:text-white transition-colors" data-idx="1">Uyum &gt; 85%</button>
+            <button class="linear-tab-btn relative z-10 px-3 py-1.5 text-xs font-semibold text-white/60 hover:text-white transition-colors" data-idx="2">Kuyrukta (3)</button>
+          </div>
+        </div>
+
+        <!-- Metric Numbers Strip -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 my-6">
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div class="text-[11px] font-mono text-white/40 uppercase">E-posta Taraması</div>
+            <div class="text-2xl font-bold text-white font-mono mt-1">48 İlan</div>
+            <div class="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+              +12 bu hafta
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div class="text-[11px] font-mono text-white/40 uppercase">Ortalama Uyum</div>
+            <div class="text-2xl font-bold text-emerald-400 font-mono mt-1">89.4%</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">DeepSeek LLM</div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div class="text-[11px] font-mono text-white/40 uppercase">SearXNG ATS Keşfi</div>
+            <div class="text-2xl font-bold text-white font-mono mt-1">22 İlan</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">Greenhouse / Lever</div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div class="text-[11px] font-mono text-white/40 uppercase">Telegram Kanalı</div>
+            <div class="text-2xl font-bold text-white font-mono mt-1">Aktif</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">2 Kullanıcı Eşli</div>
+          </div>
+        </div>
+
+        <!-- High-Precision Row List -->
+        <div class="space-y-2 mt-4">
+          <!-- Row 1 -->
+          <div class="p-4 rounded-2xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/15 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 press-action cursor-pointer group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white">
+                ST
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-white group-hover:text-blue-400 transition-colors">Senior AI & Platform Engineer</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">96% MATCH</span>
+                </div>
+                <div class="text-xs text-white/50 font-mono mt-0.5">Synthesia • London / Remote • £110k - £135k</div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-mono text-white/40 hidden lg:block">42 dk önce</span>
+              <button class="press-action px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/10 flex items-center gap-1.5">
+                <span>İncele</span>
+                <svg class="w-3 h-3 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="p-4 rounded-2xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/15 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 press-action cursor-pointer group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white">
+                MS
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-white group-hover:text-blue-400 transition-colors">Founding Agent Architect</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">91% MATCH</span>
+                </div>
+                <div class="text-xs text-white/50 font-mono mt-0.5">Mistral Partner • Paris / Remote • €120k + Equity</div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-mono text-white/40 hidden lg:block">SearXNG ATS</span>
+              <button class="press-action px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/10 flex items-center gap-1.5">
+                <span>İncele</span>
+                <svg class="w-3 h-3 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="p-4 rounded-2xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/15 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 press-action cursor-pointer group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white">
+                VR
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-white group-hover:text-blue-400 transition-colors">Staff Frontend Design Engineer</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">88% MATCH</span>
+                </div>
+                <div class="text-xs text-white/50 font-mono mt-0.5">Vercel Ecosystem • Global Remote • $170k - $190k</div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-mono text-white/40 hidden lg:block">1 gün önce</span>
+              <button class="press-action px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/10 flex items-center gap-1.5">
+                <span>İncele</span>
+                <svg class="w-3 h-3 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- TASARIM 2: APPLE CUPERTINO GLASS & VIBRANCY            -->
+    <!-- ------------------------------------------------------ -->
+    <section id="design-cupertino" class="design-page hidden">
+      <div class="cupertino-glass rounded-3xl p-6 md:p-10 relative overflow-hidden">
+        
+        <!-- Ambient Mesh Lighting in background -->
+        <div class="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-blue-600/15 blur-[90px] pointer-events-none"></div>
+        <div class="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-purple-600/15 blur-[90px] pointer-events-none"></div>
+
+        <!-- Dynamic Island Capsule Bar -->
+        <div class="flex flex-col md:flex-row items-center justify-between pb-8 border-b border-white/10 gap-4 relative z-10">
+          <div>
+            <div class="text-xs font-medium text-blue-400 tracking-wide uppercase">İş İlanı Zekâsı</div>
+            <h2 class="text-2xl font-bold text-white tracking-tight mt-0.5">Öne Çıkan Fırsatlar</h2>
+          </div>
+
+          <!-- Glass Pill Status -->
+          <div class="flex items-center gap-3 px-4 py-2 rounded-full bg-white/[0.06] border border-white/15 backdrop-blur-xl shadow-lg">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="text-xs font-semibold text-white">Canlı E-posta Dinleyicisi</span>
+            <span class="text-white/30">•</span>
+            <span class="text-xs text-white/60">324 İlan Taranıyor</span>
+          </div>
+        </div>
+
+        <!-- Featured Big Card (Cupertino Hero Job) -->
+        <div class="my-8 p-6 md:p-8 rounded-3xl bg-white/[0.04] border border-white/15 backdrop-blur-2xl shadow-2xl relative z-10">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div class="space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  En Yüksek Eşleşme
+                </span>
+                <span class="text-xs text-white/50">42 dk önce keşfedildi</span>
+              </div>
+
+              <h3 class="text-xl md:text-2xl font-bold text-white">Lead AI Systems Architect</h3>
+              <p class="text-xs text-white/70 max-w-2xl leading-relaxed">
+                Autonomous agent mimarisi, LLM orchestration ve Next.js/FastAPI entegrasyonu için CV profilinizle %96 tam uyum sağlandı.
+              </p>
+
+              <div class="flex flex-wrap gap-2 pt-1">
+                <span class="px-3 py-1 rounded-xl text-xs bg-white/[0.06] border border-white/10 text-white/80">Tamamen Uzaktan</span>
+                <span class="px-3 py-1 rounded-xl text-xs bg-white/[0.06] border border-white/10 text-white/80">£125,000 - £145,000</span>
+                <span class="px-3 py-1 rounded-xl text-xs bg-white/[0.06] border border-white/10 text-white/80">Londra / Global</span>
+              </div>
+            </div>
+
+            <!-- Circular Score Ring Graphic -->
+            <div class="flex flex-col items-center justify-center shrink-0 p-6 rounded-2xl bg-black/40 border border-white/10">
+              <div class="relative w-24 h-24 flex items-center justify-center">
+                <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                  <path class="text-white/10" stroke-width="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                  <path class="text-emerald-400" stroke-dasharray="96, 100" stroke-width="3" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                </svg>
+                <div class="absolute flex flex-col items-center">
+                  <span class="text-xl font-black text-white font-mono">96%</span>
+                  <span class="text-[9px] uppercase tracking-wider text-emerald-400 font-bold">Uyum</span>
+                </div>
+              </div>
+              <button class="mt-4 press-action px-4 py-2 rounded-xl bg-white text-black font-bold text-xs shadow-lg hover:bg-white/90">
+                Başvuruyu Aç
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- TASARIM 3: SWISS EDITORIAL & REFINED TYPOGRAPHY        -->
+    <!-- ------------------------------------------------------ -->
+    <section id="design-editorial" class="design-page hidden">
+      <div class="p-6 md:p-10 rounded-3xl bg-[#0c0d10] border border-white/10 text-[#d8d9e0]">
+        
+        <!-- Editorial Header -->
+        <div class="border-b border-white/15 pb-6">
+          <div class="flex items-center justify-between text-xs font-mono text-white/40 uppercase mb-2">
+            <span>Bülten Sayısı 04</span>
+            <span>İstanbul, TR • 2026</span>
+          </div>
+          <h2 class="text-3xl md:text-4xl font-light text-white tracking-tight font-serif italic">
+            Kariyer İstihbaratı ve Eşleşmeler
+          </h2>
+          <p class="text-xs text-white/50 max-w-xl mt-2 font-mono leading-relaxed">
+            Gereksiz süslemelerden arındırılmış, tipografik hiyerarşi ve net bilgi sunumu.
+          </p>
+        </div>
+
+        <!-- Editorial Articles / Rows -->
+        <div class="divide-y divide-white/10 my-6">
+          
+          <article class="py-6 flex flex-col md:flex-row md:items-baseline justify-between gap-4 group">
+            <div class="max-w-2xl space-y-2">
+              <div class="text-[11px] font-mono text-white/40 uppercase">Synthesia • Pozisyon Ref: 0924</div>
+              <h3 class="text-xl font-normal text-white group-hover:text-blue-300 transition-colors">
+                Staff AI & LLM Systems Engineer
+              </h3>
+              <p class="text-xs text-white/60 leading-relaxed font-sans">
+                Kullanıcı arayüzleri ile otonom LLM modelleri arasındaki veri akışını yönetecek, FastAPI ve Next.js deneyimi güçlü kıdemli mühendis aranıyor.
+              </p>
+              <div class="text-xs font-mono text-white/40 pt-1">
+                Kıdem: Senior / Lead — Ücret: £110k - £135k — Tip: Tam Zamanlı Uzaktan
+              </div>
+            </div>
+
+            <div class="text-right shrink-0">
+              <div class="text-2xl font-light text-emerald-400 font-mono">96 / 100</div>
+              <div class="text-[10px] uppercase font-mono text-white/40 tracking-wider">Yüksek Uyum</div>
+              <button class="mt-3 press-action text-xs text-white border-b border-white/40 hover:border-white pb-0.5 font-mono">
+                Raporu Oku →
+              </button>
+            </div>
+          </article>
+
+          <article class="py-6 flex flex-col md:flex-row md:items-baseline justify-between gap-4 group">
+            <div class="max-w-2xl space-y-2">
+              <div class="text-[11px] font-mono text-white/40 uppercase">Mistral Labs Partner • Pozisyon Ref: 0925</div>
+              <h3 class="text-xl font-normal text-white group-hover:text-blue-300 transition-colors">
+                Distributed Machine Learning Architect
+              </h3>
+              <p class="text-xs text-white/60 leading-relaxed font-sans">
+                Yüksek eşzamanlı çıkarım sunucuları, vLLM altyapısı ve çoklu model orkestrasyonu için çekirdek mimari ekibine katılım.
+              </p>
+              <div class="text-xs font-mono text-white/40 pt-1">
+                Kıdem: Staff — Ücret: €120k + Equity — Tip: Hibrit / Paris
+              </div>
+            </div>
+
+            <div class="text-right shrink-0">
+              <div class="text-2xl font-light text-emerald-400 font-mono">91 / 100</div>
+              <div class="text-[10px] uppercase font-mono text-white/40 tracking-wider">Yüksek Uyum</div>
+              <button class="mt-3 press-action text-xs text-white border-b border-white/40 hover:border-white pb-0.5 font-mono">
+                Raporu Oku →
+              </button>
+            </div>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- TASARIM 4: ENTERPRISE SPLIT-PANE INTELLIGENCE          -->
+    <!-- ------------------------------------------------------ -->
+    <section id="design-split" class="design-page hidden">
+      <div class="p-6 rounded-3xl bg-[#090a0d] border border-white/10 shadow-2xl">
+        
+        <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+            <span class="text-xs font-mono font-bold text-white uppercase tracking-wider">İkili Bölme Telemetrisi</span>
+          </div>
+          <span class="text-xs text-white/40 font-mono">Gecikme: 2.1s (P95)</span>
+        </div>
+
+        <!-- Master-Detail Split Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- Left Feed Column (5 cols) -->
+          <div class="lg:col-span-5 space-y-3">
+            <div class="text-xs font-mono text-white/40 uppercase">Gelen İlan Akışı (Tıklanabilir)</div>
+
+            <div class="split-item p-4 rounded-2xl bg-white/[0.06] border border-blue-500/40 cursor-pointer press-action transition-all" data-job="1">
+              <div class="flex items-center justify-between text-xs font-mono">
+                <span class="text-blue-400 font-semibold">Synthesia</span>
+                <span class="text-emerald-400 font-bold">96%</span>
+              </div>
+              <div class="text-sm font-bold text-white mt-1">Senior AI Systems Engineer</div>
+              <div class="text-[11px] text-white/50 mt-1">Remote • £110k-£135k</div>
+            </div>
+
+            <div class="split-item p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 cursor-pointer press-action transition-all" data-job="2">
+              <div class="flex items-center justify-between text-xs font-mono">
+                <span class="text-white/60">Mistral Partner</span>
+                <span class="text-emerald-400 font-bold">91%</span>
+              </div>
+              <div class="text-sm font-bold text-white mt-1">Founding Agent Architect</div>
+              <div class="text-[11px] text-white/50 mt-1">Paris/Remote • €120k</div>
+            </div>
+
+            <div class="split-item p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 cursor-pointer press-action transition-all" data-job="3">
+              <div class="flex items-center justify-between text-xs font-mono">
+                <span class="text-white/60">Linear Ecosystem</span>
+                <span class="text-emerald-400 font-bold">88%</span>
+              </div>
+              <div class="text-sm font-bold text-white mt-1">Staff Frontend Engineer</div>
+              <div class="text-[11px] text-white/50 mt-1">Global Remote • $175k</div>
+            </div>
+          </div>
+
+          <!-- Right Detail Inspector (7 cols) -->
+          <div class="lg:col-span-7 p-6 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4">
+            <div class="flex items-center justify-between pb-4 border-b border-white/10">
+              <div>
+                <span class="text-[10px] font-mono uppercase text-blue-400">Canlı Analiz İnceleyicisi</span>
+                <h3 class="text-lg font-bold text-white mt-0.5" id="splitDetailTitle">Synthesia — Senior AI Systems Engineer</h3>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" id="splitDetailScore">
+                96% Uyum Skoru
+              </span>
+            </div>
+
+            <!-- DeepSeek LLM Match Telemetry -->
+            <div class="space-y-3 text-xs">
+              <div class="p-3.5 rounded-xl bg-black/40 border border-white/5">
+                <div class="font-semibold text-white mb-1">Eşleşen Temel Yetkinlikler:</div>
+                <div class="text-white/70 space-y-1 font-mono text-[11px]">
+                  <div>• Next.js 16 + TypeScript Full-stack Mimarisi (Kusursuz)</div>
+                  <div>• Python FastAPI Asenkron Kuyruk Yönetimi (Kusursuz)</div>
+                  <div>• Bağımsız LLM Ajan Entegrasyonu (Yüksek Tecrübe)</div>
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-black/40 border border-white/5">
+                <div class="font-semibold text-amber-400 mb-1">Mülakat Öncesi Notu:</div>
+                <p class="text-white/60 leading-relaxed text-[11px]">
+                  İlan sahibinin önceki repo katkılarına göre mikro-animasyonlar ve sıfır gecikmeli UI geliştirme yeteneği başvuruyu doğrudan ilk %5 dilimine taşıyacaktır.
+                </p>
+              </div>
+
+              <div class="flex items-center gap-3 pt-2">
+                <button class="press-action flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-lg shadow-blue-500/25">
+                  ATS Başvuru Sayfasını Aç
+                </button>
+                <button class="press-action px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs border border-white/10">
+                  Telegram'a Yeniden Gönder
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ -->
+    <!-- TASARIM 5: WARM STUDIO / NORDIC TACTILE                -->
+    <!-- ------------------------------------------------------ -->
+    <section id="design-warm" class="design-page hidden">
+      <div class="p-6 md:p-10 rounded-3xl bg-[#121316] border border-[#26282e] shadow-2xl text-[#d4d6db]">
+        
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-[#26282e] gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center font-mono font-bold text-xs">
+              05
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white tracking-tight">Warm Studio Kontrol Paneli</h2>
+              <p class="text-xs text-white/40 font-mono">İskandinav ve Dokunsal Arayüz Mühendisliği</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="px-3 py-1 rounded-lg text-xs font-mono bg-[#1c1e24] text-amber-400 border border-amber-500/20">
+              Sıcaklık: Kararlı
+            </span>
+          </div>
+        </div>
+
+        <!-- Tactile Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 my-6">
+          
+          <div class="p-5 rounded-2xl bg-[#18191f] border border-[#2b2d35] hover:border-amber-500/40 transition-all press-action cursor-pointer">
+            <div class="flex items-center justify-between text-xs font-mono text-white/40">
+              <span>SYNTHESIA</span>
+              <span class="text-amber-400 font-bold">96%</span>
+            </div>
+            <h3 class="text-sm font-bold text-white mt-2">Senior AI & Platform</h3>
+            <p class="text-xs text-white/50 mt-1 leading-relaxed">FastAPI, LLM orchestration ve Next.js entegrasyonu.</p>
+            <div class="mt-4 pt-3 border-t border-[#26282e] flex items-center justify-between text-[11px] font-mono">
+              <span class="text-white/40">£110k-£135k</span>
+              <span class="text-amber-400">İncele →</span>
+            </div>
+          </div>
+
+          <div class="p-5 rounded-2xl bg-[#18191f] border border-[#2b2d35] hover:border-amber-500/40 transition-all press-action cursor-pointer">
+            <div class="flex items-center justify-between text-xs font-mono text-white/40">
+              <span>MISTRAL</span>
+              <span class="text-amber-400 font-bold">91%</span>
+            </div>
+            <h3 class="text-sm font-bold text-white mt-2">Founding Agent Architect</h3>
+            <p class="text-xs text-white/50 mt-1 leading-relaxed">vLLM çıkarım sunucuları ve model orkestrasyonu.</p>
+            <div class="mt-4 pt-3 border-t border-[#26282e] flex items-center justify-between text-[11px] font-mono">
+              <span class="text-white/40">€120k + Equity</span>
+              <span class="text-amber-400">İncele →</span>
+            </div>
+          </div>
+
+          <div class="p-5 rounded-2xl bg-[#18191f] border border-[#2b2d35] hover:border-amber-500/40 transition-all press-action cursor-pointer">
+            <div class="flex items-center justify-between text-xs font-mono text-white/40">
+              <span>LINEAR STUDIO</span>
+              <span class="text-amber-400 font-bold">88%</span>
+            </div>
+            <h3 class="text-sm font-bold text-white mt-2">Staff Design Engineer</h3>
+            <p class="text-xs text-white/50 mt-1 leading-relaxed">Craft, mikro-animasyonlar ve tipografi sistemleri.</p>
+            <div class="mt-4 pt-3 border-t border-[#26282e] flex items-center justify-between text-[11px] font-mono">
+              <span class="text-white/40">$170k-$190k</span>
+              <span class="text-amber-400">İncele →</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- JAVASCRIPT TAB CONTROLLER                                -->
+  <!-- ======================================================== -->
+  <script>
+    // --- 5 Design Archetype Switcher ---
+    const navButtons = document.querySelectorAll('.nav-style-btn');
+    const designPages = document.querySelectorAll('.design-page');
+
+    navButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.dataset.target;
+
+        navButtons.forEach(b => {
+          b.classList.remove('bg-white/15', 'text-white', 'border-white/20', 'shadow');
+          b.classList.add('text-white/60');
+          b.querySelector('span:first-child').classList.remove('text-blue-400');
+          b.querySelector('span:first-child').classList.add('text-white/40');
+        });
+
+        btn.classList.add('bg-white/15', 'text-white', 'border-white/20', 'shadow');
+        btn.classList.remove('text-white/60');
+        btn.querySelector('span:first-child').classList.remove('text-white/40');
+        btn.querySelector('span:first-child').classList.add('text-blue-400');
+
+        designPages.forEach(p => {
+          if (p.id === targetId) {
+            p.classList.remove('hidden');
+          } else {
+            p.classList.add('hidden');
+          }
+        });
+      });
+    });
+
+    // --- Linear Pill Slider (Design 1) ---
+    const linearBtns = document.querySelectorAll('.linear-tab-btn');
+    const linearPill = document.getElementById('linearPill');
+    linearBtns.forEach((btn, idx) => {
+      btn.addEventListener('click', () => {
+        linearPill.style.left = `${btn.offsetLeft}px`;
+        linearPill.style.width = `${btn.offsetWidth}px`;
+
+        linearBtns.forEach((b, i) => {
+          if (i === idx) {
+            b.classList.remove('text-white/60');
+            b.classList.add('text-black');
+          } else {
+            b.classList.remove('text-black');
+            b.classList.add('text-white/60');
+          }
+        });
+      });
+    });
+
+    // --- Split-Pane Detail Switcher (Design 4) ---
+    const splitItems = document.querySelectorAll('.split-item');
+    const splitTitle = document.getElementById('splitDetailTitle');
+    const splitScore = document.getElementById('splitDetailScore');
+
+    const splitData = {
+      "1": { title: "Synthesia — Senior AI Systems Engineer", score: "96% Uyum Skoru" },
+      "2": { title: "Mistral Partner — Founding Agent Architect", score: "91% Uyum Skoru" },
+      "3": { title: "Linear Ecosystem — Staff Frontend Engineer", score: "88% Uyum Skoru" }
+    };
+
+    splitItems.forEach(item => {
+      item.addEventListener('click', () => {
+        splitItems.forEach(i => {
+          i.classList.remove('bg-white/[0.06]', 'border-blue-500/40');
+          i.classList.add('bg-white/[0.02]', 'border-white/5');
+        });
+        item.classList.add('bg-white/[0.06]', 'border-blue-500/40');
+        item.classList.remove('bg-white/[0.02]', 'border-white/5');
+
+        const jobKey = item.dataset.job;
+        if (splitData[jobKey]) {
+          splitTitle.textContent = splitData[jobKey].title;
+          splitScore.textContent = splitData[jobKey].score;
+        }
+      });
+    });
+  </script>
+</body>
+</html>

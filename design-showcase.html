@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apple & Emil Kowalski Tasarım Sistemi Vitrini</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+      --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+      --spring-bouncy: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    body {
+      background-color: #08090a;
+      color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Slow motion for inspection */
+    body.slow-mo * {
+      animation-duration: 2.5s !important;
+      transition-duration: 1.5s !important;
+    }
+
+    /* Glassmorphism */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(28px) saturate(190%);
+      -webkit-backdrop-filter: blur(28px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .glass-pill {
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    /* Instant press feedback (Emil Kowalski rule: scale 0.97 @ 160ms) */
+    .press-scale {
+      transition: transform 160ms var(--ease-out), background-color 160ms ease, opacity 160ms ease;
+    }
+    .press-scale:active {
+      transform: scale(0.97);
+    }
+
+    /* Holographic card gradient */
+    .holo-card {
+      background: linear-gradient(135deg, #1e1e24 0%, #111116 100%);
+      transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+      transform-style: preserve-3d;
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 antialiased selection:bg-blue-500/30">
+
+  <!-- Top Navigation Header -->
+  <header class="max-w-6xl mx-auto mb-8 border-b border-white/10 pb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+          Canlı Tasarım & Mühendislik Vitrini
+        </span>
+        <span class="text-xs text-white/40">Apple & Emil Kowalski Standartları</span>
+      </div>
+      <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-white">5 Üst Düzey Arayüz Tasarımı</h1>
+      <p class="text-sm text-white/60 mt-1">Aşağıdaki sekmelerden her bir arayüz tasarımını seçip doğrudan etkileşime geçebilirsiniz.</p>
+    </div>
+
+    <!-- Global Controls -->
+    <div class="flex items-center gap-3">
+      <button id="toggleSlowMo" class="press-scale text-xs px-3.5 py-2 rounded-xl glass-pill text-white/90 hover:text-white flex items-center gap-2 transition-all">
+        <span id="slowMoDot" class="w-2 h-2 rounded-full bg-white/30"></span>
+        <span id="slowMoLabel">Ağır Çekim (0.2x)</span>
+      </button>
+      <div class="text-[11px] text-white/40 font-mono hidden md:block">
+        60-120 FPS GPU Render
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Tabs Selector (Segmented Nav) -->
+  <nav class="max-w-6xl mx-auto mb-8">
+    <div class="p-1.5 rounded-2xl bg-white/[0.04] border border-white/10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5">
+      <button class="nav-btn press-scale px-3 py-2.5 text-xs font-semibold rounded-xl text-white bg-white/15 border border-white/20 shadow-sm transition-all" data-tab="1">
+        1. Linear AI Dashboard
+      </button>
+      <button class="nav-btn press-scale px-3 py-2.5 text-xs font-semibold rounded-xl text-white/60 hover:text-white transition-all" data-tab="2">
+        2. Apple Music & Island
+      </button>
+      <button class="nav-btn press-scale px-3 py-2.5 text-xs font-semibold rounded-xl text-white/60 hover:text-white transition-all" data-tab="3">
+        3. 3D Card & Wallet
+      </button>
+      <button class="nav-btn press-scale px-3 py-2.5 text-xs font-semibold rounded-xl text-white/60 hover:text-white transition-all" data-tab="4">
+        4. Vision Pro Showcase
+      </button>
+      <button class="nav-btn press-scale px-3 py-2.5 text-xs font-semibold rounded-xl text-white/60 hover:text-white transition-all" data-tab="5">
+        5. iOS 18 Phone & Sheet
+      </button>
+    </div>
+  </nav>
+
+  <!-- CONTENT CONTAINER -->
+  <main class="max-w-6xl mx-auto">
+
+    <!-- ======================================================== -->
+    <!-- TASARIM 1: LINEAR / SAAS AI DASHBOARD -->
+    <!-- ======================================================== -->
+    <div id="view-1" class="design-view">
+      <div class="glass-panel rounded-3xl p-6 md:p-8">
+        <!-- Top App Bar -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+              ⚡
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Quantum Workspace</h2>
+              <p class="text-xs text-white/50">Sprint 42 • Emil Kowalski UI Polish Kuralları</p>
+            </div>
+          </div>
+
+          <!-- Dual Clip-path Segmented Control -->
+          <div class="relative bg-black/60 p-1 rounded-xl border border-white/10 flex items-center select-none" id="dashboardSegmented">
+            <div id="dashPill" class="absolute top-1 bottom-1 rounded-lg bg-white shadow-md transition-all duration-200" style="left: 4px; width: 88px; transition-timing-function: var(--ease-out);"></div>
+            <button class="dash-tab-btn relative z-10 px-3.5 py-1.5 text-xs font-semibold text-black transition-colors" data-index="0">Tümü (18)</button>
+            <button class="dash-tab-btn relative z-10 px-3.5 py-1.5 text-xs font-semibold text-white/60 hover:text-white transition-colors" data-index="1">Aktif (6)</button>
+            <button class="dash-tab-btn relative z-10 px-3.5 py-1.5 text-xs font-semibold text-white/60 hover:text-white transition-colors" data-index="2">İncelemede (4)</button>
+            <button class="dash-tab-btn relative z-10 px-3.5 py-1.5 text-xs font-semibold text-white/60 hover:text-white transition-colors" data-index="3">Tamamlanan</button>
+          </div>
+        </div>
+
+        <!-- Metric Stat Cards with Micro-Interactions -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all hover:translate-y-[-2px] press-scale cursor-pointer group">
+            <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+              <span>Haftalık Hız (Velocity)</span>
+              <span class="text-emerald-400 font-semibold">+18.4%</span>
+            </div>
+            <div class="text-2xl font-bold text-white tracking-tight">142 Puan</div>
+            <div class="mt-3 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full transition-all duration-500" style="width: 78%;"></div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all hover:translate-y-[-2px] press-scale cursor-pointer group">
+            <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+              <span>Gecikme (Response Time)</span>
+              <span class="text-blue-400 font-semibold">14ms</span>
+            </div>
+            <div class="text-2xl font-bold text-white tracking-tight">0.12s P99</div>
+            <div class="mt-3 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500" style="width: 92%;"></div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all hover:translate-y-[-2px] press-scale cursor-pointer group">
+            <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+              <span>Yapay Zekâ Eşleştirmesi</span>
+              <span class="text-purple-400 font-semibold">99.2%</span>
+            </div>
+            <div class="text-2xl font-bold text-white tracking-tight">84 Görev</div>
+            <div class="mt-3 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-gradient-to-r from-purple-500 to-pink-500 h-full rounded-full transition-all duration-500" style="width: 65%;"></div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/20 transition-all hover:translate-y-[-2px] press-scale cursor-pointer group">
+            <div class="flex items-center justify-between text-xs text-white/50 mb-2">
+              <span>Kod Sağlığı Skoru</span>
+              <span class="text-emerald-400 font-semibold">Kusursuz</span>
+            </div>
+            <div class="text-2xl font-bold text-white tracking-tight">A+ (98/100)</div>
+            <div class="mt-3 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-gradient-to-r from-emerald-400 to-cyan-500 h-full rounded-full transition-all duration-500" style="width: 98%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Task Rows (Staggered Animation + Quick Actions) -->
+        <div class="space-y-2 mt-4" id="taskListContainer">
+          <div class="p-3.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 flex items-center justify-between transition-all press-scale cursor-pointer group">
+            <div class="flex items-center gap-3">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <span class="text-xs font-mono text-white/40">DEV-108</span>
+              <span class="text-sm font-medium text-white group-hover:text-blue-400 transition-colors">Spring tab indicator animasyonu donanım hızlandırmasına geçirilsin</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="px-2 py-0.5 rounded-md text-[11px] bg-white/5 text-white/60">Motion</span>
+              <span class="text-xs text-white/40">Emil Kowalski</span>
+            </div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 flex items-center justify-between transition-all press-scale cursor-pointer group">
+            <div class="flex items-center gap-3">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+              <span class="text-xs font-mono text-white/40">DEV-109</span>
+              <span class="text-sm font-medium text-white group-hover:text-blue-400 transition-colors">Popovver transform-origin tetikleyici buton merkezine bağlandı</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="px-2 py-0.5 rounded-md text-[11px] bg-white/5 text-white/60">UI Polish</span>
+              <span class="text-xs text-white/40">Apple Core</span>
+            </div>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 flex items-center justify-between transition-all press-scale cursor-pointer group">
+            <div class="flex items-center gap-3">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+              <span class="text-xs font-mono text-white/40">DEV-110</span>
+              <span class="text-sm font-medium text-white group-hover:text-blue-400 transition-colors">Silme işleminde 1.8s asimetrik hold-to-confirm mekanizması devrede</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="px-2 py-0.5 rounded-md text-[11px] bg-white/5 text-white/60">Review</span>
+              <span class="text-xs text-white/40">Enis Korkut</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TASARIM 2: APPLE MUSIC & DYNAMIC ISLAND -->
+    <!-- ======================================================== -->
+    <div id="view-2" class="design-view hidden">
+      <div class="glass-panel rounded-3xl p-6 md:p-10 flex flex-col items-center justify-center relative overflow-hidden min-h-[550px]">
+        
+        <!-- Live Dynamic Island at Top -->
+        <div class="mb-10 w-full flex flex-col items-center">
+          <div class="text-xs uppercase tracking-wider text-white/40 mb-3 font-mono">Etkileşimli Dynamic Island (Tıklayarak Büyütün)</div>
+          
+          <div id="islandPill" class="bg-black text-white rounded-[32px] px-4 py-2.5 border border-white/20 shadow-2xl flex items-center justify-between cursor-pointer select-none transition-all duration-300" style="width: 210px; height: 46px; transition-timing-function: var(--ease-apple);">
+            <!-- Compact State -->
+            <div id="islandStateCompact" class="flex items-center justify-between w-full">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-pink-500 animate-pulse"></span>
+                <span class="text-xs font-semibold">Çalıyor</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <span class="w-1 h-3 bg-pink-400 rounded-full animate-bounce"></span>
+                <span class="w-1 h-4 bg-purple-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
+                <span class="w-1 h-2 bg-pink-300 rounded-full animate-bounce [animation-delay:300ms]"></span>
+              </div>
+            </div>
+
+            <!-- Expanded State -->
+            <div id="islandStateExpanded" class="hidden items-center justify-between w-full">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 to-indigo-600 flex items-center justify-center text-sm shadow">
+                  🎵
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-white">Midnight Resonance</div>
+                  <div class="text-[10px] text-white/50">Emil Kowalski • Spatial Audio</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button class="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xs">
+                  ⏸
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Apple Music Player Card (Glass & Glowing Backdrop) -->
+        <div class="w-full max-w-md p-6 rounded-3xl bg-white/[0.04] border border-white/10 backdrop-blur-2xl shadow-2xl relative">
+          <!-- Album Art with 3D Float -->
+          <div class="w-full aspect-square rounded-2xl bg-gradient-to-br from-purple-600 via-pink-600 to-indigo-900 p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden group cursor-pointer">
+            <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
+            <div class="relative z-10 flex items-center justify-between text-xs text-white/80 font-mono">
+              <span class="px-2 py-1 rounded-md bg-black/40 backdrop-blur">Lossless 24-bit/192kHz</span>
+              <span>Dolby Atmos</span>
+            </div>
+            <div class="relative z-10">
+              <div class="text-3xl font-black text-white tracking-tight drop-shadow-md">Aesthetic Craft</div>
+              <div class="text-sm font-medium text-white/80 mt-1">Design Engineering Vol. 1</div>
+            </div>
+          </div>
+
+          <!-- Controls & Scrubber -->
+          <div class="mt-6 space-y-4">
+            <div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-base font-bold text-white">Fluid Interfaces</h3>
+                  <p class="text-xs text-white/50">WWDC 2018 Special Edition</p>
+                </div>
+                <button class="press-scale text-pink-400 hover:text-pink-300 text-lg">♥</button>
+              </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div>
+              <div class="w-full bg-white/10 h-1.5 rounded-full overflow-hidden cursor-pointer relative group">
+                <div class="bg-white h-full rounded-full transition-all" style="width: 48%;"></div>
+              </div>
+              <div class="flex items-center justify-between text-[11px] text-white/40 font-mono mt-1.5">
+                <span>1:42</span>
+                <span>-2:18</span>
+              </div>
+            </div>
+
+            <!-- Playback Action Buttons -->
+            <div class="flex items-center justify-center gap-6 pt-2">
+              <button class="press-scale text-white/60 hover:text-white text-xl">⏮</button>
+              <button class="press-scale w-14 h-14 rounded-full bg-white text-black flex items-center justify-center font-bold text-xl shadow-lg hover:scale-105 active:scale-95 transition-all">
+                ▶
+              </button>
+              <button class="press-scale text-white/60 hover:text-white text-xl">⏭</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TASARIM 3: 3D CARD & WALLET (APPLE PAY) -->
+    <!-- ======================================================== -->
+    <div id="view-3" class="design-view hidden">
+      <div class="glass-panel rounded-3xl p-6 md:p-10 flex flex-col items-center justify-center min-h-[550px]">
+        <div class="text-xs uppercase tracking-wider text-white/40 mb-6 font-mono text-center">
+          Mouse / Dokunma ile 3D Ekseninde Eğim (Preserve-3D Tilt)
+        </div>
+
+        <!-- 3D Titanium Apple Card Mockup -->
+        <div id="cardTiltContainer" class="w-full max-w-sm h-56 rounded-3xl p-6 relative cursor-pointer select-none holo-card border border-white/20 shadow-2xl flex flex-col justify-between" style="perspective: 1000px;">
+          <div class="flex items-center justify-between">
+            <div class="text-xl font-bold tracking-wider text-white">Apple Card</div>
+            <span class="text-xs font-mono text-white/50">Titanium</span>
+          </div>
+
+          <div class="w-12 h-9 rounded-lg bg-gradient-to-tr from-amber-200 to-amber-400/80 shadow-inner flex items-center justify-center text-[10px] font-bold text-amber-950 font-mono">
+            CHIP
+          </div>
+
+          <div class="flex items-end justify-between">
+            <div>
+              <div class="text-xs text-white/40 font-mono">Kart Sahibi</div>
+              <div class="text-sm font-semibold text-white tracking-wide">ENIS KORKUT</div>
+            </div>
+            <div class="text-xs font-mono text-white/60">•••• 8421</div>
+          </div>
+        </div>
+
+        <!-- Wallet Quick Actions & Hold-to-Pay Button -->
+        <div class="w-full max-w-sm mt-8 space-y-4">
+          <!-- Hold to Pay (Emil Kowalski Deliberate Asymmetric Action) -->
+          <div class="relative">
+            <button id="walletHoldBtn" class="press-scale w-full h-14 rounded-2xl bg-indigo-600/30 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-200 font-semibold text-sm flex items-center justify-center relative overflow-hidden select-none">
+              <!-- Linear Fill Overlay -->
+              <div id="walletHoldFill" class="absolute inset-0 bg-indigo-600 text-white flex items-center justify-center font-bold" style="clip-path: inset(0 100% 0 0);">
+                <span>Ödeme Gönderiliyor...</span>
+              </div>
+              <span id="walletHoldLabel" class="relative z-10 flex items-center gap-2">
+                <span>Pay ile $250.00 Gönder</span>
+                <span class="text-xs opacity-60">(Basılı Tutun)</span>
+              </span>
+            </button>
+          </div>
+
+          <div id="walletSuccessBadge" class="text-xs text-center text-emerald-400 font-semibold opacity-0 transition-opacity duration-300">
+            ✓ 250.00 $ başarıyla transfer edildi!
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 pt-2">
+            <button class="press-scale p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white border border-white/5 text-center">
+              Para Ekle
+            </button>
+            <button class="press-scale p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white border border-white/5 text-center">
+              Geçmiş
+            </button>
+            <button class="press-scale p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white border border-white/5 text-center">
+              Detaylar
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TASARIM 4: VISION PRO / PRODUCT SHOWCASE -->
+    <!-- ======================================================== -->
+    <div id="view-4" class="design-view hidden">
+      <div class="glass-panel rounded-3xl p-6 md:p-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center min-h-[550px]">
+        
+        <!-- Product Hero Stage with Glowing Gradient -->
+        <div class="lg:col-span-7 flex flex-col items-center justify-center relative p-8 rounded-3xl bg-gradient-to-b from-blue-900/20 via-black to-black border border-white/10 min-h-[380px] overflow-hidden">
+          <div class="absolute w-64 h-64 rounded-full bg-blue-500/20 blur-[80px]"></div>
+          
+          <div id="productVisual" class="relative z-10 text-8xl drop-shadow-[0_25px_35px_rgba(59,130,246,0.3)] transition-transform duration-300 hover:scale-110 cursor-pointer select-none">
+            🥽
+          </div>
+
+          <div class="mt-8 text-center relative z-10">
+            <span class="px-3 py-1 rounded-full text-xs font-semibold bg-white/10 text-blue-300 border border-white/15">Spatial Computing</span>
+            <h2 class="text-3xl font-black text-white mt-2">Apple Vision Pro</h2>
+            <p class="text-xs text-white/60 mt-1 max-w-sm">Dijital içerikleri fiziksel alanınızla kusursuz harmanlayan uzamsal bilgisayar.</p>
+          </div>
+        </div>
+
+        <!-- Product Customizer & Origin-Aware Buy Drawer -->
+        <div class="lg:col-span-5 space-y-6">
+          <div>
+            <div class="text-xs font-mono text-white/50 uppercase">Model ve Renk Seçimi</div>
+            <div class="flex items-center gap-3 mt-3">
+              <button class="color-pill w-9 h-9 rounded-full bg-[#1c1d22] border-2 border-blue-500 p-0.5 press-scale shadow-lg" data-color="Space Gray"></button>
+              <button class="color-pill w-9 h-9 rounded-full bg-[#e3e4e6] border-2 border-transparent hover:border-white/50 p-0.5 press-scale" data-color="Silver"></button>
+              <button class="color-pill w-9 h-9 rounded-full bg-[#3d424d] border-2 border-transparent hover:border-white/50 p-0.5 press-scale" data-color="Midnight Blue"></button>
+            </div>
+          </div>
+
+          <!-- Origin-Aware Trigger Buttons -->
+          <div class="space-y-3 pt-2">
+            <div class="text-xs font-mono text-white/50 uppercase">Özellikler & Popover İnceleme</div>
+            <div class="flex items-center gap-3 relative">
+              <button id="specTriggerBtn" class="press-scale px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white border border-white/10 flex items-center gap-2">
+                Teknik Özellikler ▾
+              </button>
+              <button class="press-scale px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white border border-white/10 flex items-center gap-2">
+                Garanti & Kargo
+              </button>
+            </div>
+
+            <!-- Dynamic Origin-aware Popover Menu -->
+            <div id="productSpecPopover" class="hidden absolute p-4 rounded-2xl glass-panel text-xs text-white w-64 border border-white/20 shadow-2xl z-30 transition-all duration-200" style="transform: scale(0.95); opacity: 0;">
+              <div class="font-bold text-sm mb-2 text-blue-400">Mikro-OLED Ekran Sistemi</div>
+              <ul class="space-y-1.5 text-white/70 text-[11px]">
+                <li>• 23 Milyon piksel, göz başına 4K TV'den fazla</li>
+                <li>• 90Hz / 96Hz / 100Hz yenileme hızları</li>
+                <li>• Çift çip mimarisi (M2 + R1 sensör çipi)</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Buy Button with Active State -->
+          <div class="pt-4 border-t border-white/10">
+            <div class="flex items-baseline justify-between mb-3">
+              <span class="text-xs text-white/50">Fiyat</span>
+              <span class="text-2xl font-black text-white">$3,499</span>
+            </div>
+            <button class="press-scale w-full py-4 rounded-2xl bg-white hover:bg-white/90 text-black font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all">
+              <span>Satın Al ve Yapılandır</span>
+              <span>→</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- TASARIM 5: IOS 18 PHONE & RUBBER-BANDING SHEET -->
+    <!-- ======================================================== -->
+    <div id="view-5" class="design-view hidden">
+      <div class="glass-panel rounded-3xl p-6 md:p-10 flex flex-col items-center justify-center min-h-[580px]">
+        <div class="text-xs uppercase tracking-wider text-white/40 mb-6 font-mono text-center">
+          iPhone Arayüzü İçinde Canlı Sürüklenebilir Sayfa (Doğrudan Manipülasyon 1:1)
+        </div>
+
+        <!-- Phone Frame Mockup -->
+        <div class="w-full max-w-[340px] h-[520px] rounded-[44px] bg-black border-4 border-white/20 shadow-2xl relative overflow-hidden select-none flex flex-col justify-between">
+          <!-- Dynamic Island Notch -->
+          <div class="w-24 h-6 bg-black rounded-full mx-auto mt-3 border border-white/10 flex items-center justify-center">
+            <span class="w-2 h-2 rounded-full bg-blue-500/40"></span>
+          </div>
+
+          <!-- Phone Screen Content (Weather & Widgets) -->
+          <div class="px-5 pt-3 flex-1">
+            <div class="flex items-center justify-between text-xs text-white/50 mb-4 font-medium">
+              <span>İstanbul</span>
+              <span>22° Güneşli</span>
+            </div>
+
+            <!-- Weather Widget Card -->
+            <div class="p-4 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-800 text-white shadow-lg mb-3">
+              <div class="text-xs font-semibold opacity-80">Bugün</div>
+              <div class="text-3xl font-black mt-1">24°C</div>
+              <div class="text-xs opacity-75 mt-1">Hafif rüzgar • Akşam serin</div>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-white/10 border border-white/10 text-xs text-white/80 flex items-center justify-between">
+              <span>Yarınki Toplantı</span>
+              <span class="text-blue-400 font-mono">10:30</span>
+            </div>
+          </div>
+
+          <!-- Interactive Draggable Bottom Sheet with WWDC Rubber-Banding -->
+          <div id="phoneSheet" class="w-full rounded-t-[32px] bg-[#1a1b22] border-t border-white/20 p-5 shadow-2xl cursor-grab active:cursor-grabbing transition-transform duration-0 touch-none relative" style="transform: translateY(120px);">
+            <!-- Drag Handle Bar -->
+            <div class="w-10 h-1.5 bg-white/40 rounded-full mx-auto mb-4"></div>
+
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-bold text-white">Apple Denetim Sayfası</h4>
+              <span class="text-[10px] text-blue-400 font-mono">WWDC 2018</span>
+            </div>
+
+            <p class="text-xs text-white/60 leading-relaxed mb-4">
+              Bu sayfayı parmağınız veya mouse ile yukarı/aşağı sürükleyin. Sınır aşıldığında logaritmik esneme devrededir.
+            </p>
+
+            <div class="flex items-center justify-between text-[11px] font-mono text-white/50 pt-3 border-t border-white/10">
+              <span>Mesafe: <span id="sheetDist" class="text-white">120px</span></span>
+              <span>Direnç: <span id="sheetRes" class="text-white">1.0</span></span>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-xs text-white/40 mt-4 text-center">
+          Kartı tutun ve yukarı çekin. Bıraktığınız an Apple yay formülüyle hedefe fırlar.
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // --- TAB SWITCHER LOGIC ---
+    const navButtons = document.querySelectorAll('.nav-btn');
+    const views = document.querySelectorAll('.design-view');
+
+    navButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tabNum = btn.dataset.tab;
+        
+        navButtons.forEach(b => {
+          b.classList.remove('bg-white/15', 'text-white', 'border-white/20', 'shadow-sm');
+          b.classList.add('text-white/60');
+        });
+        btn.classList.add('bg-white/15', 'text-white', 'border-white/20', 'shadow-sm');
+        btn.classList.remove('text-white/60');
+
+        views.forEach(v => {
+          if (v.id === `view-${tabNum}`) {
+            v.classList.remove('hidden');
+          } else {
+            v.classList.add('hidden');
+          }
+        });
+      });
+    });
+
+    // --- SLOW MOTION TOGGLE ---
+    const slowBtn = document.getElementById('toggleSlowMo');
+    const slowDot = document.getElementById('slowMoDot');
+    const slowLabel = document.getElementById('slowMoLabel');
+    let slowMoActive = false;
+
+    slowBtn.addEventListener('click', () => {
+      slowMoActive = !slowMoActive;
+      document.body.classList.toggle('slow-mo', slowMoActive);
+      if (slowMoActive) {
+        slowDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        slowLabel.textContent = 'Ağır Çekim Açık (0.2x)';
+      } else {
+        slowDot.className = 'w-2 h-2 rounded-full bg-white/30';
+        slowLabel.textContent = 'Ağır Çekim (0.2x)';
+      }
+    });
+
+    // --- TASARIM 1: SEGMENTED PILL SLIDER ---
+    const dashBtns = document.querySelectorAll('.dash-tab-btn');
+    const dashPill = document.getElementById('dashPill');
+    dashBtns.forEach((btn, idx) => {
+      btn.addEventListener('click', () => {
+        dashPill.style.width = `${btn.offsetWidth}px`;
+        dashPill.style.left = `${btn.offsetLeft}px`;
+
+        dashBtns.forEach((b, i) => {
+          if (i === idx) {
+            b.classList.remove('text-white/60');
+            b.classList.add('text-black');
+          } else {
+            b.classList.remove('text-black');
+            b.classList.add('text-white/60');
+          }
+        });
+      });
+    });
+
+    // --- TASARIM 2: DYNAMIC ISLAND EXPAND/COLLAPSE ---
+    const islandPill = document.getElementById('islandPill');
+    const islandCompact = document.getElementById('islandStateCompact');
+    const islandExpanded = document.getElementById('islandStateExpanded');
+    let islandOpen = false;
+
+    islandPill.addEventListener('click', () => {
+      islandOpen = !islandOpen;
+      if (islandOpen) {
+        islandPill.style.width = '340px';
+        islandPill.style.height = '72px';
+        islandPill.style.borderRadius = '28px';
+        islandCompact.classList.add('hidden');
+        islandExpanded.classList.remove('hidden');
+      } else {
+        islandPill.style.width = '210px';
+        islandPill.style.height = '46px';
+        islandPill.style.borderRadius = '32px';
+        islandCompact.classList.remove('hidden');
+        islandExpanded.classList.add('hidden');
+      }
+    });
+
+    // --- TASARIM 3: 3D CARD TILT & HOLD-TO-PAY ---
+    const cardEl = document.getElementById('cardTiltContainer');
+    cardEl.addEventListener('mousemove', (e) => {
+      const rect = cardEl.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      const rotateX = -(y / rect.height) * 20;
+      const rotateY = (x / rect.width) * 20;
+      cardEl.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+    });
+    cardEl.addEventListener('mouseleave', () => {
+      cardEl.style.transform = 'rotateX(0deg) rotateY(0deg)';
+    });
+
+    // Hold to pay logic (1.8s deliberate fill)
+    const holdBtn = document.getElementById('walletHoldBtn');
+    const holdFill = document.getElementById('walletHoldFill');
+    const holdLabel = document.getElementById('walletHoldLabel');
+    const holdBadge = document.getElementById('walletSuccessBadge');
+    let holdTimer = null;
+
+    holdBtn.addEventListener('pointerdown', () => {
+      const duration = slowMoActive ? 3500 : 1800;
+      holdFill.style.transition = `clip-path ${duration}ms linear`;
+      holdFill.style.clipPath = 'inset(0 0 0 0)';
+
+      holdTimer = setTimeout(() => {
+        holdFill.style.transition = 'none';
+        holdLabel.innerHTML = '✓ Onaylandı';
+        holdBadge.style.opacity = '1';
+        holdBtn.classList.add('bg-emerald-600', 'border-emerald-500', 'text-white');
+      }, duration);
+    });
+
+    function cancelPayHold() {
+      clearTimeout(holdTimer);
+      holdFill.style.transition = 'clip-path 180ms cubic-bezier(0.23, 1, 0.32, 1)';
+      holdFill.style.clipPath = 'inset(0 100% 0 0)';
+    }
+    holdBtn.addEventListener('pointerup', cancelPayHold);
+    holdBtn.addEventListener('pointerleave', cancelPayHold);
+
+    // --- TASARIM 4: ORIGIN-AWARE SPEC POPOVER ---
+    const specBtn = document.getElementById('specTriggerBtn');
+    const specPop = document.getElementById('productSpecPopover');
+    let specOpen = false;
+
+    specBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      specOpen = !specOpen;
+      if (specOpen) {
+        specPop.style.left = `${specBtn.offsetLeft}px`;
+        specPop.style.top = `${specBtn.offsetTop + 44}px`;
+        specPop.classList.remove('hidden');
+        requestAnimationFrame(() => {
+          specPop.style.transform = 'scale(1)';
+          specPop.style.opacity = '1';
+        });
+      } else {
+        closeSpecPop();
+      }
+    });
+
+    function closeSpecPop() {
+      specPop.style.transform = 'scale(0.95)';
+      specPop.style.opacity = '0';
+      setTimeout(() => specPop.classList.add('hidden'), 200);
+      specOpen = false;
+    }
+    document.addEventListener('click', (e) => {
+      if (!specPop.contains(e.target)) closeSpecPop();
+    });
+
+    // --- TASARIM 5: PHONE SHEET RUBBER-BANDING ---
+    const phoneSheet = document.getElementById('phoneSheet');
+    const sheetDistText = document.getElementById('sheetDist');
+    const sheetResText = document.getElementById('sheetRes');
+
+    let isDragging = false;
+    let startPointerY = 0;
+    let currentSheetY = 120; // Default collapsed
+
+    function rubberband(overshoot, dimension = 240, constant = 0.55) {
+      return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+    }
+
+    phoneSheet.addEventListener('pointerdown', (e) => {
+      isDragging = true;
+      startPointerY = e.clientY - currentSheetY;
+      phoneSheet.setPointerCapture(e.pointerId);
+      phoneSheet.style.transition = 'none';
+    });
+
+    phoneSheet.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const rawDelta = e.clientY - startPointerY;
+      
+      let clampedY;
+      if (rawDelta < 0) {
+        // Dragging above top bound
+        clampedY = rubberband(rawDelta, 200, 0.45);
+      } else if (rawDelta > 180) {
+        // Dragging past bottom bound
+        clampedY = 180 + rubberband(rawDelta - 180, 180, 0.45);
+      } else {
+        clampedY = rawDelta;
+      }
+
+      currentSheetY = clampedY;
+      phoneSheet.style.transform = `translateY(${clampedY}px)`;
+      sheetDistText.textContent = `${Math.round(clampedY)}px`;
+      sheetResText.textContent = (rawDelta < 0 || rawDelta > 180) ? '0.45 (Esneme)' : '1.0';
+    });
+
+    function releasePhoneSheet() {
+      if (!isDragging) return;
+      isDragging = false;
+
+      // Snap to nearest state (0px = full, 120px = peek)
+      const target = currentSheetY < 60 ? 0 : 120;
+      currentSheetY = target;
+      phoneSheet.style.transition = 'transform 380ms cubic-bezier(0.175, 0.885, 0.32, 1.15)';
+      phoneSheet.style.transform = `translateY(${target}px)`;
+      sheetDistText.textContent = `${target}px`;
+      sheetResText.textContent = '1.0';
+    }
+
+    phoneSheet.addEventListener('pointerup', releasePhoneSheet);
+    phoneSheet.addEventListener('pointercancel', releasePhoneSheet);
+  </script>
+</body>
+</html>

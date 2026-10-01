@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Hunter — Uçtan Uca Tasarım 2 & 3 Vitrini</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    body {
+      background-color: #07080a;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+    }
+
+    /* Press scale 0.97 feedback */
+    .press-action {
+      transition: transform 160ms var(--ease-out), background-color 160ms ease, opacity 160ms ease;
+    }
+    .press-action:active {
+      transform: scale(0.97);
+    }
+
+    /* Cupertino Glass Material */
+    .cupertino-glass-panel {
+      background: rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(32px) saturate(190%);
+      -webkit-backdrop-filter: blur(32px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    }
+
+    .cupertino-card {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: transform 220ms var(--ease-out), border-color 220ms ease, box-shadow 220ms ease;
+    }
+    .cupertino-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 16px 32px -8px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Swiss Editorial Clean Dividers */
+    .editorial-border {
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-blue-500/30">
+
+  <!-- ======================================================== -->
+  <!-- TOP LEVEL: DESIGN SYSTEM SELECTOR (DESIGN 2 vs DESIGN 3) -->
+  <!-- ======================================================== -->
+  <div class="sticky top-0 z-50 bg-[#07080a]/90 backdrop-blur-xl border-b border-white/10 px-4 md:px-8 py-3">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-mono uppercase tracking-wider text-white/40">Tasarım Seçimi:</span>
+        <div class="inline-flex p-1 rounded-xl bg-white/[0.06] border border-white/10">
+          <button id="switchDesign2" class="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition-all press-action flex items-center gap-2">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            Tasarım 2: Apple Cupertino Glass
+          </button>
+          <button id="switchDesign3" class="px-4 py-1.5 rounded-lg text-xs font-semibold text-white/60 hover:text-white transition-all press-action flex items-center gap-2">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
+            Tasarım 3: İsviçre Editöryal
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 text-[11px] font-mono text-white/40">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span>Uçtan Uca 6 Sayfa Aktif • Sıfır Emoji</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- SHELL 2: APPLE CUPERTINO GLASS (TAM SİTE DENEYİMİ)       -->
+  <!-- ======================================================== -->
+  <div id="shellDesign2" class="design-shell">
+    
+    <!-- Top Nav with Dynamic Island Capsule -->
+    <header class="cupertino-glass-panel border-b border-white/10 px-4 md:px-8 py-4 mb-6">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+        
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-indigo-500/20">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-base font-bold text-white tracking-tight">Job Hunter</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">Aşama 4</span>
+            </div>
+            <p class="text-xs text-white/40">Cupertino Liquid Glass Arayüzü</p>
+          </div>
+        </div>
+
+        <!-- Dynamic Island Capsule Status -->
+        <div class="flex items-center gap-3 px-4 py-2 rounded-full bg-white/[0.05] border border-white/15 backdrop-blur-xl shadow-inner select-none">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span class="text-xs font-semibold text-white">Gmail & Outlook Aktif</span>
+          <span class="text-white/20">•</span>
+          <span class="text-[11px] font-mono text-white/50">Son tarama: 2 dk önce</span>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+            +3 Yeni İlan
+          </span>
+        </div>
+
+        <!-- User Chip -->
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center font-bold text-xs text-white">
+            EK
+          </div>
+          <div class="text-left hidden sm:block">
+            <div class="text-xs font-semibold text-white">Enis Korkut</div>
+            <div class="text-[10px] text-white/40">Senior AI / Full-Stack</div>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- Navigation Pills Bar (Cupertino) -->
+    <div class="max-w-7xl mx-auto px-4 md:px-8 mb-6">
+      <div class="p-1 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center gap-1 overflow-x-auto">
+        <button class="c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white bg-white/15 border border-white/20 shadow-sm transition-all" data-page="c-dashboard">
+          Genel Bakış
+        </button>
+        <button class="c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all" data-page="c-jobs">
+          İlan Havuzu (48)
+        </button>
+        <button class="c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all" data-page="c-detail">
+          İlan Detay & CV Analiz
+        </button>
+        <button class="c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all" data-page="c-integrations">
+          Entegrasyonlar (OAuth & Bot)
+        </button>
+        <button class="c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all" data-page="c-preferences">
+          CV & Eşik Ayarları
+        </button>
+        <button class="c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all" data-page="c-logs">
+          Tarama Geçmişi & Loglar
+        </button>
+      </div>
+    </div>
+
+    <!-- CUPERTINO PAGES CONTENT -->
+    <main class="max-w-7xl mx-auto px-4 md:px-8 pb-16">
+      
+      <!-- C-1: Dashboard -->
+      <section id="c-dashboard" class="c-page space-y-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="cupertino-card p-5 rounded-3xl">
+            <div class="text-xs text-white/50 font-medium mb-1">Toplam İlan Havuzu</div>
+            <div class="text-3xl font-black text-white font-mono">48</div>
+            <div class="text-[11px] text-emerald-400 mt-2 flex items-center gap-1">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              Son 24 saatte 6 yeni ilan
+            </div>
+          </div>
+          <div class="cupertino-card p-5 rounded-3xl">
+            <div class="text-xs text-white/50 font-medium mb-1">Yüksek CV Uyumu (%85+)</div>
+            <div class="text-3xl font-black text-emerald-400 font-mono">14</div>
+            <div class="text-[11px] text-white/40 mt-2">DeepSeek LLM ile skorlandı</div>
+          </div>
+          <div class="cupertino-card p-5 rounded-3xl">
+            <div class="text-xs text-white/50 font-medium mb-1">SearXNG ATS Keşfi</div>
+            <div class="text-3xl font-black text-blue-400 font-mono">22</div>
+            <div class="text-[11px] text-white/40 mt-2">Resmi Greenhouse / Lever linkleri</div>
+          </div>
+          <div class="cupertino-card p-5 rounded-3xl">
+            <div class="text-xs text-white/50 font-medium mb-1">Telegram Bildirimleri</div>
+            <div class="text-3xl font-black text-purple-400 font-mono">100%</div>
+            <div class="text-[11px] text-white/40 mt-2">Eşik: %80 üzeri anlık iletildi</div>
+          </div>
+        </div>
+
+        <div class="cupertino-glass-panel p-6 md:p-8 rounded-3xl">
+          <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
+            <h3 class="text-base font-bold text-white">Öncelikli Eşleşen Son İlanlar</h3>
+            <span class="text-xs text-white/40">Gecikme &lt; 15ms</span>
+          </div>
+
+          <div class="space-y-3">
+            <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-xs">
+                  SY
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-white">Senior AI & Platform Engineer</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">96% Uyum</span>
+                  </div>
+                  <div class="text-xs text-white/50 mt-0.5">Synthesia • London / Remote • £110k-£135k</div>
+                </div>
+              </div>
+              <button class="goto-detail-btn press-action px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium" data-target="c-detail">
+                İncele & Analiz →
+              </button>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center font-bold text-xs">
+                  MS
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-white">Founding Agent Architect</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">91% Uyum</span>
+                  </div>
+                  <div class="text-xs text-white/50 mt-0.5">Mistral Partner • Paris / Remote • €120k</div>
+                </div>
+              </div>
+              <button class="goto-detail-btn press-action px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-medium" data-target="c-detail">
+                İncele & Analiz →
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C-2: Jobs Feed -->
+      <section id="c-jobs" class="c-page hidden space-y-4">
+        <div class="cupertino-glass-panel p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-white/50">Filtrele:</span>
+            <button class="px-3 py-1 rounded-lg text-xs bg-white/10 text-white border border-white/10">Tümü (48)</button>
+            <button class="px-3 py-1 rounded-lg text-xs bg-white/[0.03] text-white/60 hover:text-white">Uyum &gt; 85% (14)</button>
+            <button class="px-3 py-1 rounded-lg text-xs bg-white/[0.03] text-white/60 hover:text-white">Remote (32)</button>
+          </div>
+          <div class="text-xs text-white/40 font-mono">Sıralama: Skor (Azalan)</div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="cupertino-card p-6 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <h4 class="text-base font-bold text-white">Lead Full-Stack Agent Engineer</h4>
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">96%</span>
+              </div>
+              <p class="text-xs text-white/60">Synthesia • London / Remote • £110k-£135k • LinkedIn E-posta</p>
+              <p class="text-xs text-white/80 bg-white/[0.02] p-2.5 rounded-xl border border-white/5 max-w-2xl">
+                Next.js 16, Python/FastAPI ve çoklu model orkestrasyonu tecrübeniz tam örtüşüyor.
+              </p>
+            </div>
+            <button class="goto-detail-btn press-action px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0" data-target="c-detail">
+              Detayı Görüntüle
+            </button>
+          </div>
+
+          <div class="cupertino-card p-6 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <h4 class="text-base font-bold text-white">Distributed AI Systems Engineer</h4>
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">91%</span>
+              </div>
+              <p class="text-xs text-white/60">Mistral AI Ecosystem • Paris / Remote • €120,000 • Greenhouse ATS</p>
+              <p class="text-xs text-white/80 bg-white/[0.02] p-2.5 rounded-xl border border-white/5 max-w-2xl">
+                vLLM çıkarım sunucuları ve asenkron kuyruk yönetimi ilanın gereksinimlerini karşılıyor.
+              </p>
+            </div>
+            <button class="goto-detail-btn press-action px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shrink-0" data-target="c-detail">
+              Detayı Görüntüle
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- C-3: Job Detail & CV Analysis -->
+      <section id="c-detail" class="c-page hidden space-y-6">
+        <div class="cupertino-glass-panel p-6 md:p-8 rounded-3xl">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-white/10">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  96% CV Eşleşmesi
+                </span>
+                <span class="text-xs text-white/40">42 dk önce tarandı</span>
+              </div>
+              <h2 class="text-2xl font-bold text-white">Senior AI & Platform Engineer</h2>
+              <p class="text-xs text-white/60 mt-1">Synthesia • London / Remote • £110k - £135k • LinkedIn Source</p>
+            </div>
+
+            <!-- Score Gauge -->
+            <div class="flex items-center gap-4 bg-black/40 p-4 rounded-2xl border border-white/10 shrink-0">
+              <div class="text-right">
+                <div class="text-2xl font-black text-emerald-400 font-mono">96 / 100</div>
+                <div class="text-[10px] text-white/40 uppercase font-mono">DeepSeek LLM</div>
+              </div>
+              <a href="#" class="press-action px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-500/20">
+                Resmi Başvuru Sayfası ↗
+              </a>
+            </div>
+          </div>
+
+          <!-- Analysis Detail Content -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+            <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
+              <div class="text-xs font-bold text-emerald-400 uppercase tracking-wider font-mono">Güçlü Yetkinlik Eşleşmeleri</div>
+              <ul class="text-xs text-white/70 space-y-2">
+                <li class="flex items-start gap-2">
+                  <span class="text-emerald-400 font-bold">•</span>
+                  <span><strong>Next.js 16 + TypeScript:</strong> CV'nizdeki modern frontend mimarisiyle tam örtüşüyor.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-emerald-400 font-bold">•</span>
+                  <span><strong>FastAPI & Asenkron Mimari:</strong> İlandaki streaming API gereksinimi karşılanıyor.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-emerald-400 font-bold">•</span>
+                  <span><strong>LLM Entegrasyonu:</strong> Bağımsız ajan tasarımı tecrübesi aranan ana kriter.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
+              <div class="text-xs font-bold text-amber-400 uppercase tracking-wider font-mono">Mülakat ve Başvuru Önerileri</div>
+              <ul class="text-xs text-white/70 space-y-2">
+                <li class="flex items-start gap-2">
+                  <span class="text-amber-400 font-bold">•</span>
+                  <span>Ön mektubunuzda açık kaynak katkılarınızı ve sıfır gecikmeli UI yaklaşımlarınızı vurgulayın.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <span class="text-amber-400 font-bold">•</span>
+                  <span>Telegram bildirimi kullanıcı hesabınıza 18:24'te iletildi.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C-4: Integrations -->
+      <section id="c-integrations" class="c-page hidden space-y-6">
+        <div class="cupertino-glass-panel p-6 md:p-8 rounded-3xl">
+          <h3 class="text-lg font-bold text-white mb-2">E-posta ve Tarama Entegrasyonları</h3>
+          <p class="text-xs text-white/50 mb-6">Fernet şifrelemeli yerel oturumlar ve bağımsız istemciler.</p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-white">Gmail OAuth İstemcisi</div>
+                <div class="text-xs text-white/40 mt-0.5">Son tarama: 2 dk önce • Durum: Bağlı</div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Aktif</span>
+            </div>
+
+            <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-white">Outlook / Hotmail OAuth</div>
+                <div class="text-xs text-white/40 mt-0.5">Son tarama: 10 dk önce • Durum: Bağlı</div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Aktif</span>
+            </div>
+
+            <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-white">SearXNG ATS Web Keşfi</div>
+                <div class="text-xs text-white/40 mt-0.5">SSRF korumalı JSON-LD ayrıştırıcı</div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">Çalışıyor</span>
+            </div>
+
+            <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-white">Telegram Bot Bildirimi</div>
+                <div class="text-xs text-white/40 mt-0.5">Eşik: %80 • Kullanıcı ID: 64182910</div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-xs font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20">Bağlı</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C-5: Preferences & CV -->
+      <section id="c-preferences" class="c-page hidden space-y-6">
+        <div class="cupertino-glass-panel p-6 md:p-8 rounded-3xl">
+          <h3 class="text-lg font-bold text-white mb-2">CV Profili ve LLM Eşleştirme Tercihleri</h3>
+          <p class="text-xs text-white/50 mb-6">Yüklenen CV'nin vektör önbelleği ve skorlama eşiği.</p>
+
+          <div class="space-y-4 max-w-xl">
+            <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+              <div>
+                <div class="text-xs font-bold text-white">Enis_Korkut_CV_2026.pdf</div>
+                <div class="text-[11px] text-white/40">Metin başarıyla çıkarıldı (3.840 karakter)</div>
+              </div>
+              <button class="press-action px-3 py-1.5 rounded-lg bg-white/10 text-xs font-medium text-white hover:bg-white/15">
+                Yenile
+              </button>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-white mb-1.5">Bildirim Eşik Skoru: %80</label>
+              <input type="range" min="50" max="95" value="80" class="w-full accent-blue-500 cursor-pointer">
+              <div class="flex justify-between text-[10px] font-mono text-white/40 mt-1">
+                <span>%50 (Geniş)</span>
+                <span>%80 (Önerilen)</span>
+                <span>%95 (Çok Katı)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C-6: Logs -->
+      <section id="c-logs" class="c-page hidden space-y-6">
+        <div class="cupertino-glass-panel p-6 md:p-8 rounded-3xl">
+          <h3 class="text-lg font-bold text-white mb-2">Sistem Tarama ve Analiz Logları</h3>
+          <p class="text-xs text-white/50 mb-6">SQLite veritabanı tarama geçmişi ve LLM yanıt süreleri.</p>
+
+          <div class="divide-y divide-white/5 font-mono text-xs">
+            <div class="py-2.5 flex items-center justify-between text-white/70">
+              <span>[22:20:12] Gmail OAuth taraması tamamlandı — 2 yeni ilan tekilleştirildi.</span>
+              <span class="text-emerald-400">BAŞARILI</span>
+            </div>
+            <div class="py-2.5 flex items-center justify-between text-white/70">
+              <span>[22:15:04] DeepSeek LLM skorlama kuyruğu işlendi — Ortalama süre 1.84s.</span>
+              <span class="text-emerald-400">BAŞARILI</span>
+            </div>
+            <div class="py-2.5 flex items-center justify-between text-white/70">
+              <span>[22:10:48] SearXNG ATS taraması — Greenhouse schema.org/JobPosting parse edildi.</span>
+              <span class="text-blue-400">BİLGİ</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- SHELL 3: SWISS EDITORIAL (TAM SİTE DENEYİMİ)              -->
+  <!-- ======================================================== -->
+  <div id="shellDesign3" class="design-shell hidden">
+    
+    <!-- Editorial Masthead -->
+    <header class="border-b editorial-border px-4 md:px-8 py-6 mb-8 bg-[#0c0d10]">
+      <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-baseline justify-between gap-4">
+        <div>
+          <div class="text-[11px] font-mono text-white/40 uppercase tracking-widest mb-1">
+            Job Hunter • Cilt 04 • Günlük Kariyer İstihbaratı
+          </div>
+          <h1 class="text-3xl md:text-4xl font-light text-white tracking-tight font-serif italic">
+            Job Hunter İsviçre Editöryal
+          </h1>
+        </div>
+
+        <div class="text-right text-xs font-mono text-white/50">
+          <div>İstanbul, TR • 2026</div>
+          <div class="text-emerald-400 mt-0.5">Sistem Durumu: Taramalar Senkronize</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Editorial Navigation Links Bar -->
+    <div class="max-w-7xl mx-auto px-4 md:px-8 mb-8">
+      <div class="border-y editorial-border py-3 flex items-center gap-6 overflow-x-auto text-xs font-mono">
+        <button class="ed-nav-btn text-white font-bold border-b-2 border-white pb-0.5" data-page="ed-dashboard">
+          01. GENEL BAKIŞ
+        </button>
+        <button class="ed-nav-btn text-white/50 hover:text-white pb-0.5" data-page="ed-jobs">
+          02. İLAN HAVUZU
+        </button>
+        <button class="ed-nav-btn text-white/50 hover:text-white pb-0.5" data-page="ed-detail">
+          03. DETAY VE ANALİZ
+        </button>
+        <button class="ed-nav-btn text-white/50 hover:text-white pb-0.5" data-page="ed-integrations">
+          04. ENTEGRASYONLAR
+        </button>
+        <button class="ed-nav-btn text-white/50 hover:text-white pb-0.5" data-page="ed-preferences">
+          05. CV VE EŞİK AYARLARI
+        </button>
+        <button class="ed-nav-btn text-white/50 hover:text-white pb-0.5" data-page="ed-logs">
+          06. SİSTEM LOGLARI
+        </button>
+      </div>
+    </div>
+
+    <!-- SWISS EDITORIAL PAGES CONTENT -->
+    <main class="max-w-7xl mx-auto px-4 md:px-8 pb-16">
+
+      <!-- ED-1: Dashboard -->
+      <section id="ed-dashboard" class="ed-page space-y-8">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 pb-8 border-b editorial-border">
+          <div>
+            <div class="text-[11px] font-mono text-white/40 uppercase">Toplam Kayıt</div>
+            <div class="text-3xl font-light text-white font-mono mt-1">48 İlan</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">Son taramadan +6</div>
+          </div>
+          <div>
+            <div class="text-[11px] font-mono text-white/40 uppercase">Öncelikli Eşleşme</div>
+            <div class="text-3xl font-light text-emerald-400 font-mono mt-1">14 İlan</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">&gt; 85% Eşik Skoru</div>
+          </div>
+          <div>
+            <div class="text-[11px] font-mono text-white/40 uppercase">ATS Web Keşfi</div>
+            <div class="text-3xl font-light text-white font-mono mt-1">22 İlan</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">SearXNG + JSON-LD</div>
+          </div>
+          <div>
+            <div class="text-[11px] font-mono text-white/40 uppercase">Telegram Kanalı</div>
+            <div class="text-3xl font-light text-white font-mono mt-1">Aktif</div>
+            <div class="text-[11px] text-white/40 mt-1 font-mono">2 Kullanıcı Eşli</div>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="text-xl font-normal text-white font-serif italic mb-4">Günün Öne Çıkan Başlıkları</h3>
+          <div class="divide-y editorial-border">
+            <div class="py-5 flex flex-col md:flex-row md:items-baseline justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-mono text-white/40 uppercase">Synthesia • Pozisyon Ref: AI-092</div>
+                <h4 class="text-lg font-medium text-white hover:text-blue-300 transition-colors cursor-pointer goto-ed-detail">
+                  Senior AI & Platform Engineer
+                </h4>
+                <p class="text-xs text-white/60 mt-1 max-w-2xl font-sans">
+                  Next.js, FastAPI ve LLM otonom ajan mimarisi için tam uyumlu profil.
+                </p>
+              </div>
+              <div class="text-right shrink-0">
+                <span class="text-lg font-light text-emerald-400 font-mono">96 / 100</span>
+                <div class="text-[10px] font-mono text-white/40">Yüksek Uyum</div>
+              </div>
+            </div>
+
+            <div class="py-5 flex flex-col md:flex-row md:items-baseline justify-between gap-4">
+              <div>
+                <div class="text-[11px] font-mono text-white/40 uppercase">Mistral Labs Partner • Pozisyon Ref: ML-104</div>
+                <h4 class="text-lg font-medium text-white hover:text-blue-300 transition-colors cursor-pointer goto-ed-detail">
+                  Founding Agent Architect
+                </h4>
+                <p class="text-xs text-white/60 mt-1 max-w-2xl font-sans">
+                  Çoklu model orkestrasyonu ve yüksek hacimli streaming API altyapısı.
+                </p>
+              </div>
+              <div class="text-right shrink-0">
+                <span class="text-lg font-light text-emerald-400 font-mono">91 / 100</span>
+                <div class="text-[10px] font-mono text-white/40">Yüksek Uyum</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ED-2: Jobs -->
+      <section id="ed-jobs" class="ed-page hidden space-y-6">
+        <div class="border-b editorial-border pb-4 flex items-center justify-between text-xs font-mono">
+          <span class="text-white/60">TÜM İLAN ARŞİVİ (48 KAYIT)</span>
+          <span class="text-white/40">SIRALAMA: SKOR ÖNCELİKLİ</span>
+        </div>
+
+        <div class="divide-y editorial-border">
+          <div class="py-6 flex flex-col md:flex-row md:items-baseline justify-between gap-4">
+            <div class="space-y-1">
+              <div class="text-[11px] font-mono text-white/40">SYNTHESIA • LONDRA / REMOTE</div>
+              <h4 class="text-lg font-medium text-white">Senior AI & Platform Engineer</h4>
+              <p class="text-xs text-white/60 max-w-2xl font-sans">
+                Next.js 16, Python/FastAPI ve LLM ajan entegrasyonu tecrübeniz ilanın ana isterleriyle örtüşüyor.
+              </p>
+              <div class="text-xs font-mono text-white/40 pt-1">Ücret Skalası: £110,000 - £135,000</div>
+            </div>
+            <div class="text-right shrink-0">
+              <span class="text-xl font-light text-emerald-400 font-mono">96 / 100</span>
+              <div class="mt-2">
+                <button class="goto-ed-detail text-xs text-white border-b border-white/50 hover:border-white font-mono pb-0.5">
+                  Raporu Oku →
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="py-6 flex flex-col md:flex-row md:items-baseline justify-between gap-4">
+            <div class="space-y-1">
+              <div class="text-[11px] font-mono text-white/40">MISTRAL PARTNER • PARIS / HİBRİT</div>
+              <h4 class="text-lg font-medium text-white">Distributed Machine Learning Architect</h4>
+              <p class="text-xs text-white/60 max-w-2xl font-sans">
+                vLLM çıkarım sunucuları ve model orkestrasyonu için kıdemli pozisyon.
+              </p>
+              <div class="text-xs font-mono text-white/40 pt-1">Ücret: €120,000 + Hisse Opsiyonu</div>
+            </div>
+            <div class="text-right shrink-0">
+              <span class="text-xl font-light text-emerald-400 font-mono">91 / 100</span>
+              <div class="mt-2">
+                <button class="goto-ed-detail text-xs text-white border-b border-white/50 hover:border-white font-mono pb-0.5">
+                  Raporu Oku →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ED-3: Detail -->
+      <section id="ed-detail" class="ed-page hidden space-y-6">
+        <div class="border-b editorial-border pb-6">
+          <div class="text-[11px] font-mono text-white/40 uppercase mb-1">DETAYLI ANALİZ RAPORU • REF: SYN-092</div>
+          <h2 class="text-3xl font-light text-white font-serif italic">Senior AI & Platform Engineer</h2>
+          <div class="text-xs font-mono text-white/60 mt-2">
+            Synthesia • Londra / Remote • £110k-£135k • Skor: 96 / 100
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 text-xs font-sans text-white/80 leading-relaxed">
+          <div class="space-y-3">
+            <h4 class="font-mono text-emerald-400 uppercase text-[11px] font-bold">01. Güçlü Yönler</h4>
+            <p>
+              Adayın CV'sindeki Next.js App Router ve TypeScript yetkinlikleri pozisyonun temel isterlerini karşılamaktadır.
+            </p>
+            <p>
+              FastAPI ve asenkron kuyruk yönetimi ilandaki backend gereksinimleriyle birebir uyumludur.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h4 class="font-mono text-amber-400 uppercase text-[11px] font-bold">02. Dikkat ve İpuçları</h4>
+            <p>
+              İlanda en az 5 yıl profesyonel yazılım geliştirme deneyimi aranmaktadır.
+            </p>
+            <p>
+              Adayın başvuru mektubunda sıfır gecikmeli UI geliştirme tecrübesine değinmesi önerilir.
+            </p>
+          </div>
+        </div>
+
+        <div class="pt-6 border-t editorial-border flex items-center justify-between">
+          <span class="text-xs font-mono text-white/40">KAYNAK: LINKEDIN E-POSTA ALERTI</span>
+          <a href="#" class="text-xs font-mono text-white border-b border-white pb-0.5">
+            Orijinal İlanı Aç ↗
+          </a>
+        </div>
+      </section>
+
+      <!-- ED-4: Integrations -->
+      <section id="ed-integrations" class="ed-page hidden space-y-6">
+        <div class="border-b editorial-border pb-4">
+          <h3 class="text-xl font-serif italic text-white">Bağlı Hesaplar ve Servisler</h3>
+          <p class="text-xs font-mono text-white/40 mt-1">E-posta okuma ve arama entegrasyonlarının durumu.</p>
+        </div>
+
+        <div class="divide-y editorial-border text-xs font-mono">
+          <div class="py-4 flex items-center justify-between">
+            <span>GMAIL OAUTH HESABI</span>
+            <span class="text-emerald-400">BAĞLI (2 DK ÖNCE TARANDI)</span>
+          </div>
+          <div class="py-4 flex items-center justify-between">
+            <span>OUTLOOK / HOTMAIL OAUTH HESABI</span>
+            <span class="text-emerald-400">BAĞLI (10 DK ÖNCE TARANDI)</span>
+          </div>
+          <div class="py-4 flex items-center justify-between">
+            <span>SEARXNG ATS KEŞİF MOTORU</span>
+            <span class="text-emerald-400">AKTİF (SSRF KORUMASI DEVREDE)</span>
+          </div>
+          <div class="py-4 flex items-center justify-between">
+            <span>TELEGRAM BOT BİLDİRİM SERVİSİ</span>
+            <span class="text-emerald-400">BAĞLI (EŞİK: %80)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ED-5: Preferences -->
+      <section id="ed-preferences" class="ed-page hidden space-y-6">
+        <div class="border-b editorial-border pb-4">
+          <h3 class="text-xl font-serif italic text-white">CV ve Eşleştirme Yapılandırması</h3>
+          <p class="text-xs font-mono text-white/40 mt-1">LLM skorlama motoru ve kıdem profili parametreleri.</p>
+        </div>
+
+        <div class="space-y-4 max-w-xl text-xs font-mono">
+          <div class="border editorial-border p-4">
+            <div class="text-white">AKTİF CV: ENIS_KORKUT_CV_2026.PDF</div>
+            <div class="text-white/40 mt-1">Metin çıkarıldı • LLM profil önbelleği güncel</div>
+          </div>
+
+          <div class="pt-2">
+            <div class="text-white mb-2">BİLDİRİM EŞİK SKORU: %80</div>
+            <div class="text-white/40 text-[11px] leading-relaxed">
+              Bu oranın üzerindeki tüm eşleşmeler gecikmesiz olarak Telegram üzerinden kullanıcıya iletilir.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ED-6: Logs -->
+      <section id="ed-logs" class="ed-page hidden space-y-6">
+        <div class="border-b editorial-border pb-4">
+          <h3 class="text-xl font-serif italic text-white">Sistem Faaliyet Kayıtları</h3>
+          <p class="text-xs font-mono text-white/40 mt-1">Zaman damgalı operasyon geçmişi.</p>
+        </div>
+
+        <div class="space-y-2 font-mono text-xs text-white/70">
+          <div class="flex items-center justify-between py-1.5 border-b editorial-border">
+            <span>22:20:12 — Gmail e-posta taraması başarıyla tamamlandı.</span>
+            <span class="text-emerald-400">KOD 200</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5 border-b editorial-border">
+            <span>22:15:04 — DeepSeek LLM analiz kuyruğu işlendi.</span>
+            <span class="text-emerald-400">KOD 200</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5 border-b editorial-border">
+            <span>22:10:48 — SearXNG ATS web taraması tamamlandı.</span>
+            <span class="text-white/40">BİLGİ</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- JAVASCRIPT: DUAL-SYSTEM CONTROLLER                       -->
+  <!-- ======================================================== -->
+  <script>
+    // --- 1. Master Switcher: Design 2 vs Design 3 ---
+    const btnD2 = document.getElementById('switchDesign2');
+    const btnD3 = document.getElementById('switchDesign3');
+    const shellD2 = document.getElementById('shellDesign2');
+    const shellD3 = document.getElementById('shellDesign3');
+
+    btnD2.addEventListener('click', () => {
+      shellD2.classList.remove('hidden');
+      shellD3.classList.add('hidden');
+      btnD2.className = "px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition-all press-action flex items-center gap-2";
+      btnD3.className = "px-4 py-1.5 rounded-lg text-xs font-semibold text-white/60 hover:text-white transition-all press-action flex items-center gap-2";
+    });
+
+    btnD3.addEventListener('click', () => {
+      shellD3.classList.remove('hidden');
+      shellD2.classList.add('hidden');
+      btnD3.className = "px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-white/20 border border-white/30 shadow-sm transition-all press-action flex items-center gap-2";
+      btnD2.className = "px-4 py-1.5 rounded-lg text-xs font-semibold text-white/60 hover:text-white transition-all press-action flex items-center gap-2";
+    });
+
+    // --- 2. Cupertino Pages Switcher ---
+    const cNavBtns = document.querySelectorAll('.c-nav-btn');
+    const cPages = document.querySelectorAll('.c-page');
+
+    function showCPage(targetId) {
+      cNavBtns.forEach(btn => {
+        if (btn.dataset.page === targetId) {
+          btn.className = "c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white bg-white/15 border border-white/20 shadow-sm transition-all";
+        } else {
+          btn.className = "c-nav-btn press-action px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white transition-all";
+        }
+      });
+
+      cPages.forEach(page => {
+        if (page.id === targetId) {
+          page.classList.remove('hidden');
+        } else {
+          page.classList.add('hidden');
+        }
+      });
+    }
+
+    cNavBtns.forEach(btn => {
+      btn.addEventListener('click', () => showCPage(btn.dataset.page));
+    });
+
+    document.querySelectorAll('.goto-detail-btn').forEach(btn => {
+      btn.addEventListener('click', () => showCPage('c-detail'));
+    });
+
+    // --- 3. Swiss Editorial Pages Switcher ---
+    const edNavBtns = document.querySelectorAll('.ed-nav-btn');
+    const edPages = document.querySelectorAll('.ed-page');
+
+    function showEdPage(targetId) {
+      edNavBtns.forEach(btn => {
+        if (btn.dataset.page === targetId) {
+          btn.className = "ed-nav-btn text-white font-bold border-b-2 border-white pb-0.5";
+        } else {
+          btn.className = "ed-nav-btn text-white/50 hover:text-white pb-0.5";
+        }
+      });
+
+      edPages.forEach(page => {
+        if (page.id === targetId) {
+          page.classList.remove('hidden');
+        } else {
+          page.classList.add('hidden');
+        }
+      });
+    }
+
+    edNavBtns.forEach(btn => {
+      btn.addEventListener('click', () => showEdPage(btn.dataset.page));
+    });
+
+    document.querySelectorAll('.goto-ed-detail').forEach(el => {
+      el.addEventListener('click', () => showEdPage('ed-detail'));
+    });
+  </script>
+</body>
+</html>

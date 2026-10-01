@@ -1,5 +1,5 @@
-import { DashboardView } from "@/components/app/dashboard-view";
+import { ExecutiveCockpit } from "@/components/app/executive-cockpit";
 
 export default function DashboardPage() {
-  return <DashboardView />;
+  return <ExecutiveCockpit />;
 }

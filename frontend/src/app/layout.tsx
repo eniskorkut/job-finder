@@ -35,8 +35,8 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <script src="/assets/globe/globe.gl.min.js" />
-        <script src="/assets/globe/countries-data.js" />
       </head>
+
       <body>{children}</body>
     </html>
   );

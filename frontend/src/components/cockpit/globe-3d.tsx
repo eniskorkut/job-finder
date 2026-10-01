@@ -163,12 +163,8 @@ export function Globe3D({
         .showAtmosphere(true)
         .atmosphereColor("#ffffff")
         .atmosphereAltitude(0.18)
-
-        .polygonAltitude(0.005)
-        .polygonCapColor(() => "rgba(255, 255, 255, 0.025)")
-        .polygonSideColor(() => "rgba(255, 255, 255, 0.01)")
-        .polygonStrokeColor(() => "rgba(255, 255, 255, 0.22)")
         .arcsData(getArcsData())
+
         .arcStartLat((d: any) => d.startLat)
         .arcStartLng((d: any) => d.startLng)
         .arcEndLat((d: any) => d.endLat)
@@ -215,14 +211,6 @@ export function Globe3D({
           return el;
         });
 
-      const geo = (window as any).COUNTRIES_GEOJSON;
-      if (geo && Array.isArray(geo.features)) {
-        // Filter out features with null geometry — Globe.gl reads geometry.type and crashes on null
-        const validFeatures = geo.features.filter(
-          (f: any) => f && f.geometry != null
-        );
-        globe.polygonsData(validFeatures);
-      }
 
       const controls = globe.controls();
       if (controls) {
@@ -272,6 +260,9 @@ export function Globe3D({
       }
 
       globeInstanceRef.current = globe;
+      if (typeof window !== "undefined") {
+        (window as any).__globe = globe;
+      }
 
       return () => {
         window.removeEventListener("resize", handleResize);

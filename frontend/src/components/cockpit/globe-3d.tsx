@@ -161,8 +161,8 @@ export function Globe3D({
         .bumpImageUrl("")
         .backgroundColor("rgba(0, 0, 0, 0)")
         .showAtmosphere(true)
-        .atmosphereColor("#ffffff")
-        .atmosphereAltitude(0.18)
+        .atmosphereColor("rgba(180, 210, 255, 0.65)")
+        .atmosphereAltitude(0.12)
         .polygonAltitude(0.005)
         .polygonCapColor(() => "rgba(255, 255, 255, 0.025)")
         .polygonSideColor(() => "rgba(255, 255, 255, 0.01)")
@@ -310,13 +310,16 @@ export function Globe3D({
     if (!globe) return;
     if (textureMode === "topo") {
       globe.globeImageUrl("/assets/globe/earth-topo-bathy.jpg");
-      globe.atmosphereColor("#ffffff");
+      globe.atmosphereColor("rgba(180, 210, 255, 0.65)");
+      globe.atmosphereAltitude(0.12);
     } else if (textureMode === "blue-marble") {
       globe.globeImageUrl("/assets/globe/earth-blue-marble.jpg");
       globe.atmosphereColor("#60a5fa");
+      globe.atmosphereAltitude(0.14);
     } else if (textureMode === "carbon-matrix") {
       globe.globeImageUrl(createProceduralCarbonTexture());
       globe.atmosphereColor("#a1a1aa");
+      globe.atmosphereAltitude(0.10);
     }
   }, [textureMode]);
 

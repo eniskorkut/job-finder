@@ -150,12 +150,12 @@ function Shell({ children }: { children: React.ReactNode }) {
   const { error, refetch } = useSession();
   const router = useRouter();
 
-  // An expired session invalidates the shell immediately.
+  // An expired session invalidates the shell immediately (except on root cockpit).
   useEffect(() => {
-    if (error && error.includes("Oturum")) {
+    if (pathname !== "/" && error && error.includes("Oturum")) {
       router.replace("/login");
     }
-  }, [error, router]);
+  }, [error, router, pathname]);
 
   if (pathname === "/") {
     return <main className="min-h-screen bg-[#020203] text-[#f4f4f5]">{children}</main>;

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export const SESSION_COOKIE = "jh_session";
 
-const PUBLIC_PATHS = ["/login", "/invite"];
+const PUBLIC_PATHS = ["/", "/login", "/invite"];
 
 /**
  * Pure decision helper so the routing rules are unit testable without a

@@ -1,4 +1,4 @@
-import { ExecutiveCockpit } from "@/components/app/executive-cockpit";
+import { ExecutiveCockpit } from "@/components/cockpit";
 
 export default function DashboardPage() {
   return <ExecutiveCockpit />;

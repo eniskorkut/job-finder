@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export const SESSION_COOKIE = "jh_session";
 
-const PUBLIC_PATHS = ["/", "/login", "/invite"];
+const PUBLIC_PATHS = ["/", "/login", "/invite", "/assets"];
 
 /**
  * Pure decision helper so the routing rules are unit testable without a
@@ -54,6 +54,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)",
+    "/((?!api|_next/static|_next/image|assets|favicon.ico|icon.svg|robots.txt).*)",
   ],
 };
+

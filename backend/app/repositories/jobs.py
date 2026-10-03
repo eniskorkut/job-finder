@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import selectinload
 
 from app.models.job import Job, JobMatch, JobWebSource
 from app.models.mail_account import MailAccount
@@ -103,7 +104,9 @@ class JobRepository(Repository[Job]):
         total = int(self.db.execute(count_stmt).scalar_one())
 
         stmt = apply_filters(
-            self._base_query(user_id).outerjoin(JobMatch, JobMatch.job_id == Job.id)
+            self._base_query(user_id)
+            .options(selectinload(Job.match), selectinload(Job.web_sources))
+            .outerjoin(JobMatch, JobMatch.job_id == Job.id)
         )
         if status:
             stmt = stmt.where(JobMatch.status == status)
@@ -118,7 +121,11 @@ class JobRepository(Repository[Job]):
         return jobs, total
 
     def get_for_user(self, user_id: uuid.UUID, job_id: uuid.UUID) -> Job | None:
-        stmt = select(Job).where(Job.id == job_id, Job.user_id == user_id)
+        stmt = (
+            select(Job)
+            .options(selectinload(Job.match), selectinload(Job.web_sources))
+            .where(Job.id == job_id, Job.user_id == user_id)
+        )
         return self.db.execute(stmt).scalar_one_or_none()
 
     def get_match_for_user(self, user_id: uuid.UUID, job_id: uuid.UUID) -> JobMatch | None:

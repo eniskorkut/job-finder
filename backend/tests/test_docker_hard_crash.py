@@ -33,8 +33,18 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 COMPOSE_FILE = str(PROJECT_ROOT / "compose.backend.yml")
+
+
+def is_docker_running() -> bool:
+    try:
+        res = subprocess.run(["docker", "info"], capture_output=True, timeout=2)
+        return res.returncode == 0
+    except Exception:
+        return False
 
 
 def run_cmd(cmd: list[str]) -> str:
@@ -104,6 +114,9 @@ print(json.dumps({
 
 
 def test_docker_hard_crash_recovery_acceptance():
+    if not is_docker_running():
+        pytest.skip("Docker daemon is not running on this host.")
+
     docker_restart_verified = False
     in_flight_recovery_verified = False
 

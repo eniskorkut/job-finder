@@ -237,16 +237,16 @@ def test_custom_sites_api_endpoints(api_user1):
     )
 
     with patch("app.services.site_crawler_service.SafeWebFetcher.fetch", mock_fetch):
-        # 1. Crawl single custom site endpoint
+        # 1. Crawl single custom site endpoint (202 durable job)
         crawl_resp = api_user1.post(
             "/api/v1/integrations/custom-sites/crawl",
             json={"url": "https://acme.example/jobs"},
         )
-        assert crawl_resp.status_code == 200
+        assert crawl_resp.status_code == 202
         data = crawl_resp.json()
-        assert data["success"] is True
-        assert data["jobs_found"] == 1
-        assert data["jobs_created"] == 1
+        assert data["status"] == "queued"
+        assert "job_id" in data
+        assert data["url"] == "https://acme.example/jobs"
 
         # 2. Verify sites endpoint
         verify_resp = api_user1.post(
@@ -257,3 +257,36 @@ def test_custom_sites_api_endpoints(api_user1):
         vdata = verify_resp.json()
         assert vdata["success"] is True
         assert vdata["active_sites"] == 1
+
+
+@pytest.mark.asyncio
+async def test_site_crawl_worker_execution(db, user1):
+    from app.services.sync_job_service import SyncJobService, SyncRunner
+    from app.models.sync_job import SyncJob
+    from app.models.enums import SyncJobStatus
+
+    mock_fetch = AsyncMock(
+        return_value=FetchResult(
+            url="https://acme.example/careers",
+            final_url="https://acme.example/careers",
+            status_code=200,
+            content=SAMPLE_JSON_LD_HTML,
+        )
+    )
+
+    job_service = SyncJobService(db)
+    job = job_service.enqueue_site_crawl(user1, "https://acme.example/careers")
+    db.commit()
+    job_id = job.id
+
+    with patch("app.services.site_crawler_service.SafeWebFetcher.fetch", mock_fetch):
+        runner = SyncRunner(worker_id="crawler-test")
+        status = await runner.execute(job_id)
+
+    assert status == SyncJobStatus.COMPLETED
+
+    db.expire_all()
+    refreshed_job = db.get(SyncJob, job_id)
+    assert refreshed_job.status == SyncJobStatus.COMPLETED.value
+    assert refreshed_job.jobs_found == 1
+    assert refreshed_job.jobs_new == 1

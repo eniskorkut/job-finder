@@ -128,13 +128,32 @@ export function Globe3D({
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
+    let isCancelled = false;
 
-    // Check if Globe is loaded on window
-    const GlobeClass = (window as any).Globe;
-    if (!GlobeClass) {
-      console.warn("Globe.gl script not ready yet.");
-      return;
-    }
+    const loadAndInit = async () => {
+      // Lazy load Globe JS on demand: 0 byte until Globe tab opens
+      if (typeof window !== "undefined" && !(window as any).Globe) {
+        await new Promise<void>((resolve, reject) => {
+          const existing = document.querySelector('script[src="/assets/globe/globe.gl.min.js"]');
+          if (existing) {
+            existing.addEventListener("load", () => resolve());
+            return;
+          }
+          const script = document.createElement("script");
+          script.src = "/assets/globe/globe.gl.min.js";
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Globe script load failed"));
+          document.head.appendChild(script);
+        });
+      }
+
+      if (isCancelled || !containerRef.current) return;
+      const GlobeClass = (window as any).Globe;
+      if (!GlobeClass) {
+        console.warn("Globe.gl script not ready yet.");
+        return;
+      }
 
     const rect = container.getBoundingClientRect();
     const parentCard = container.closest(".carbon-card");
@@ -263,17 +282,21 @@ export function Globe3D({
       if (typeof window !== "undefined") {
         (window as any).__globe = globe;
       }
-
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        if (globeInstanceRef.current) {
-          globeInstanceRef.current._destructor?.();
-        }
-      };
     } catch (e) {
       console.error("Globe init error:", e);
     }
-  }, []);
+  };
+
+  loadAndInit();
+
+  return () => {
+    isCancelled = true;
+    if (globeInstanceRef.current) {
+      globeInstanceRef.current._destructor?.();
+      globeInstanceRef.current = null;
+    }
+  };
+}, []);
 
   // Update Point of View when activeCityKey changes
   useEffect(() => {

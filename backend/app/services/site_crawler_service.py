@@ -446,6 +446,7 @@ class SiteCrawlerService:
     async def verify_sites(self, sites: list[str]) -> VerifySitesResponse:
         results: list[SiteVerificationItem] = []
         active_count = 0
+        semaphore = asyncio.Semaphore(4)
 
         async def _check_one(raw_s: str) -> SiteVerificationItem:
             nonlocal active_count
@@ -459,42 +460,43 @@ class SiteCrawlerService:
                     message="Geçersiz adres",
                 )
 
-            try:
-                res = await self.fetcher.fetch(url)
-                if res.status_code == 200:
-                    postings = self.extract_all_postings(res.content, url)
-                    active_count += 1
-                    return SiteVerificationItem(
-                        site=raw_s,
-                        status="ok",
-                        status_code=200,
-                        jobs_found=len(postings),
-                        message=f"Bağlantı başarılı (HTTP 200), {len(postings)} ilan tespit edildi.",
-                    )
-                else:
+            async with semaphore:
+                try:
+                    res = await self.fetcher.fetch(url)
+                    if res.status_code == 200:
+                        postings = self.extract_all_postings(res.content, url)
+                        active_count += 1
+                        return SiteVerificationItem(
+                            site=raw_s,
+                            status="ok",
+                            status_code=200,
+                            jobs_found=len(postings),
+                            message=f"Bağlantı başarılı (HTTP 200), {len(postings)} ilan tespit edildi.",
+                        )
+                    else:
+                        return SiteVerificationItem(
+                            site=raw_s,
+                            status="error",
+                            status_code=res.status_code,
+                            jobs_found=0,
+                            message=f"HTTP {res.status_code}",
+                        )
+                except SSRFProtectionError:
                     return SiteVerificationItem(
                         site=raw_s,
                         status="error",
-                        status_code=res.status_code,
+                        status_code=None,
                         jobs_found=0,
-                        message=f"HTTP {res.status_code}",
+                        message="Güvenlik engeli (Özel Ağ)",
                     )
-            except SSRFProtectionError:
-                return SiteVerificationItem(
-                    site=raw_s,
-                    status="error",
-                    status_code=None,
-                    jobs_found=0,
-                    message="Güvenlik engeli (Özel Ağ)",
-                )
-            except Exception as err:
-                return SiteVerificationItem(
-                    site=raw_s,
-                    status="error",
-                    status_code=None,
-                    jobs_found=0,
-                    message=str(err),
-                )
+                except Exception as err:
+                    return SiteVerificationItem(
+                        site=raw_s,
+                        status="error",
+                        status_code=None,
+                        jobs_found=0,
+                        message=str(err),
+                    )
 
         tasks = [_check_one(s) for s in sites if s.strip()]
         if tasks:

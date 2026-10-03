@@ -92,6 +92,30 @@ class SyncJobService:
         )
         return job
 
+    def enqueue_site_crawl(
+        self,
+        user: User,
+        url: str,
+        *,
+        trigger: SyncTrigger = SyncTrigger.MANUAL,
+    ) -> SyncJob:
+        active = self.jobs.active_for_user(user.id, kinds=("site_crawl",))
+        if active is not None:
+            raise errors.conflict(
+                f"Bu kullanıcı için zaten çalışan bir site taraması var (iş: {active.id})."
+            )
+        job = SyncJob(
+            user_id=user.id,
+            kind="site_crawl",
+            status=SyncJobStatus.QUEUED.value,
+            trigger=trigger.value,
+            payload={"url": url},
+            progress={"stage": "queued", "url": url},
+        )
+        self.db.add(job)
+        self.db.flush()
+        return job
+
     def progress(self, user: User, job_id: uuid.UUID) -> dict:
         job = self.jobs.get_for_user(user.id, job_id)
         if job is None:
@@ -304,6 +328,8 @@ class SyncRunner:
                 status = await self._execute_scoring(job_id)
             elif kind == "notify":
                 status = await self._execute_notify(job_id)
+            elif kind == "site_crawl":
+                status = await self._execute_site_crawl(job_id)
             else:
                 status = await self._execute_mail_scan(job_id)
             registered = True
@@ -358,6 +384,51 @@ class SyncRunner:
         outcome = await runner.run(job_id)
         self._finish_job(job_id, outcome.status, error=outcome.error_message)
         return outcome.status
+
+    async def _execute_site_crawl(self, job_id: uuid.UUID) -> SyncJobStatus:
+        from app.services.site_crawler_service import SiteCrawlerService
+
+        with self.session_factory() as session:
+            job = session.get(SyncJob, job_id)
+            if job is None:
+                return SyncJobStatus.FAILED
+            user_id = job.user_id
+            url = (job.payload or {}).get("url")
+            if not user_id or not url:
+                self._finish_job(job_id, SyncJobStatus.FAILED, error="Geçersiz tarama parametreleri.")
+                return SyncJobStatus.FAILED
+
+        if self._is_cancelled(job_id):
+            self._finish_job(job_id, SyncJobStatus.CANCELLED)
+            return SyncJobStatus.CANCELLED
+
+        try:
+            with self.session_factory() as session:
+                user = session.get(User, user_id)
+                service = SiteCrawlerService(session)
+                res = await service.crawl_site(user, url)
+                session.commit()
+
+            with self.session_factory() as session:
+                j = session.get(SyncJob, job_id)
+                if j:
+                    j.jobs_found = res.jobs_found
+                    j.jobs_new = res.jobs_created
+                    j.progress = {
+                        "stage": "completed",
+                        "jobs_found": res.jobs_found,
+                        "jobs_created": res.jobs_created,
+                        "url": res.url,
+                    }
+                session.commit()
+
+            status = SyncJobStatus.COMPLETED if res.success else SyncJobStatus.FAILED
+            self._finish_job(job_id, status, error=res.message if not res.success else None)
+            return status
+        except Exception as exc:
+            logger.exception("Site tarama işi başarısız oldu: %s", exc)
+            self._finish_job(job_id, SyncJobStatus.FAILED, error=str(exc))
+            return SyncJobStatus.FAILED
 
     async def _execute_mail_scan(self, job_id: uuid.UUID) -> SyncJobStatus:
         with self.session_factory() as session:
@@ -595,6 +666,19 @@ class SyncRunner:
                     if score_job is not None:
                         logger.info(
                             "Zenginleştirme sonrası skorlama kuyruğa alındı (user=%s, job=%s)",
+                            user_id,
+                            score_job.id,
+                        )
+            elif kind == "site_crawl":
+                if status in {SyncJobStatus.COMPLETED, SyncJobStatus.PARTIAL_FAILED}:
+                    from app.services.scoring_service import ScoringService
+
+                    with self.session_factory() as session:
+                        score_job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                        session.commit()
+                    if score_job is not None:
+                        logger.info(
+                            "Site tarama sonrası skorlama kuyruğa alındı (user=%s, job=%s)",
                             user_id,
                             score_job.id,
                         )

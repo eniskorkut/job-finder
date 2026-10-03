@@ -4,7 +4,7 @@ import logging
 import uuid
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.api.deps import CurrentSession, CurrentUser, DbSession
@@ -15,6 +15,7 @@ from app.schemas.common import MessageResponse
 from app.schemas.integration import (
     AccountTestResponse,
     ConnectResponse,
+    CrawlJobEnqueuedResponse,
     CrawlSiteRequest,
     CrawlSiteResponse,
     IntegrationsResponse,
@@ -32,6 +33,7 @@ from app.services.auth_service import AuthService
 from app.services.integration_service import IntegrationService
 from app.services.oauth_service import OAuthClientService, OAuthFlowService
 from app.services.site_crawler_service import SiteCrawlerService
+from app.services.sync_job_service import SyncJobService
 from app.services.telegram_service import TelegramConfigService
 
 logger = logging.getLogger("jobhunter.api.integrations")
@@ -324,13 +326,24 @@ def unlink_telegram(user: CurrentUser, db: DbSession) -> dict:
 
 
 # --- Custom Career Sites and ATS Crawler --------------------------------
-@router.post("/custom-sites/crawl", response_model=CrawlSiteResponse)
-async def crawl_custom_site(
+@router.post(
+    "/custom-sites/crawl",
+    response_model=CrawlJobEnqueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def crawl_custom_site(
     payload: CrawlSiteRequest, user: CurrentUser, db: DbSession
-) -> CrawlSiteResponse:
-    """Crawl a custom company career site or ATS URL and ingest its job postings."""
-    service = SiteCrawlerService(db)
-    return await service.crawl_site(user, payload.url)
+) -> CrawlJobEnqueuedResponse:
+    """Crawl a custom company career site or ATS URL via durable background job (202)."""
+    service = SyncJobService(db)
+    job = service.enqueue_site_crawl(user, payload.url)
+    db.commit()
+    return CrawlJobEnqueuedResponse(
+        job_id=job.id,
+        status=job.status,
+        url=payload.url,
+        message=f"'{payload.url}' için arka plan tarama görevi başlatıldı.",
+    )
 
 
 @router.post("/custom-sites/verify", response_model=VerifySitesResponse)

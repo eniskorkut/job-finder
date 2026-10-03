@@ -453,7 +453,7 @@ class TestAcceptanceScenarios:
         )
 
         service = JobEnrichmentService(db, search_provider=search_provider, fetcher=fetcher)
-        await service.enrich_job(job.id)
+        await service.enrich_job(job.id, now=now)
 
         posted = job.posted_at.replace(tzinfo=timezone.utc) if job.posted_at.tzinfo is None else job.posted_at
         assert posted == datetime(2026, 9, 25, 10, 0, 0, tzinfo=timezone.utc)

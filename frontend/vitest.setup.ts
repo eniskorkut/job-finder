@@ -2,8 +2,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
+import { clearJobsCache } from "@/lib/api";
+
 afterEach(() => {
   cleanup();
+  clearJobsCache();
   vi.unstubAllGlobals();
 });
 

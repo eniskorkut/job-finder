@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.models.enums import MatchStatus, SyncTrigger, WorkMode
@@ -27,6 +27,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 def list_jobs(
     user: CurrentUser,
     db: DbSession,
+    response: Response,
     search: str | None = Query(default=None, max_length=200),
     company: str | None = Query(default=None, max_length=200),
     location: str | None = Query(default=None, max_length=200),
@@ -43,6 +44,7 @@ def list_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> Page[JobRead]:
+    response.headers["Cache-Control"] = "private, max-age=30"
     items, total = JobService(db).list(
         user,
         search=search,

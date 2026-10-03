@@ -884,6 +884,7 @@ class JobEnrichmentService:
         job_id: uuid.UUID,
         *,
         force: bool = False,
+        now: datetime | None = None,
     ) -> JobEnrichmentOutcome:
         """Run discovery, enrichment, and freshness calculation for a single job posting.
         Network operations execute detached without holding active DB transactions.
@@ -913,6 +914,7 @@ class JobEnrichmentService:
             self.search_provider,
             self.fetcher,
             force=force,
+            now=now,
         )
 
         # Step 3: Persist result in a NEW short DB session

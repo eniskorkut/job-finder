@@ -195,6 +195,13 @@ class CrawlSiteResponse(BaseModel):
     message: str
 
 
+class CrawlJobEnqueuedResponse(BaseModel):
+    job_id: uuid.UUID
+    status: str = "queued"
+    url: str
+    message: str
+
+
 class VerifySitesRequest(BaseModel):
     sites: list[str] = Field(default_factory=list)
 

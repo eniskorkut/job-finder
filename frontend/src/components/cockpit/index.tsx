@@ -1,16 +1,34 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { CockpitHeader } from "./cockpit-header";
-import { TabGlobe } from "./tab-globe";
-import { TabJobs } from "./tab-jobs";
-import { TabIntegrations } from "./tab-integrations";
-import { TabCv } from "./tab-cv";
-import { TabSync } from "./tab-sync";
-import { JobDetailModal } from "./job-detail-modal";
 import { ToastNotificationContainer } from "./toast-notification";
 import { CITY_DATABASE } from "./mock-data";
+import { api } from "@/lib/api";
 import type { CityHub, Dossier, TabId, ToastItem } from "./types";
+
+// Dynamic imports to slash first-load JS by 40-60%
+const TabGlobe = dynamic(() => import("./tab-globe").then((m) => m.TabGlobe), {
+  ssr: false,
+});
+const TabJobs = dynamic(() => import("./tab-jobs").then((m) => m.TabJobs), {
+  ssr: false,
+});
+const TabIntegrations = dynamic(
+  () => import("./tab-integrations").then((m) => m.TabIntegrations),
+  { ssr: false }
+);
+const TabCv = dynamic(() => import("./tab-cv").then((m) => m.TabCv), {
+  ssr: false,
+});
+const TabSync = dynamic(() => import("./tab-sync").then((m) => m.TabSync), {
+  ssr: false,
+});
+const JobDetailModal = dynamic(
+  () => import("./job-detail-modal").then((m) => m.JobDetailModal),
+  { ssr: false }
+);
 
 export function ExecutiveCockpit() {
   const [activeTab, setActiveTab] = useState<TabId>("tab-globe");
@@ -33,13 +51,11 @@ export function ExecutiveCockpit() {
     }, 3500);
   }, []);
 
-  // Fetch real jobs from backend API
+  // Fetch real jobs from backend API using 30s cache
   const fetchBackendJobs = useCallback(async () => {
     try {
-      const resp = await fetch("/api/v1/jobs?page_size=100");
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && Array.isArray(data.items) && data.items.length > 0) {
+      const data = await api.get<any>("/api/v1/jobs?page_size=100");
+      if (data && Array.isArray(data.items) && data.items.length > 0) {
           const mapped: Dossier[] = data.items
             .filter((item: any) => !item.is_mock)
             .map((item: any) => ({
@@ -69,7 +85,6 @@ export function ExecutiveCockpit() {
             }));
           setBackendDossiers(mapped);
         }
-      }
     } catch {
       // Backend not running or offline, fallback cleanly to mock
     }

@@ -34,7 +34,6 @@ export default function RootLayout({
     <html lang="tr" suppressHydrationWarning className="dark">
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <script src="/assets/globe/globe.gl.min.js" />
       </head>
 
       <body>{children}</body>

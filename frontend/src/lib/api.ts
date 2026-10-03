@@ -88,12 +88,38 @@ async function parseError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, code, message, details);
 }
 
+interface JobsCacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const jobsCache = new Map<string, JobsCacheEntry<unknown>>();
+const JOBS_CACHE_TTL_MS = 30_000;
+
+export function clearJobsCache(): void {
+  jobsCache.clear();
+}
+
 export async function apiRequest<T>(
   path: string,
   { body, formData, skipCsrf, headers, ...init }: RequestOptions = {},
 ): Promise<T> {
   const method = (init.method ?? (body || formData ? "POST" : "GET")).toUpperCase();
   const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method);
+
+  // 30s cache for jobs requests: zero network if requested within 30 seconds
+  const isJobsQuery = method === "GET" && path.includes("/api/v1/jobs");
+  if (isJobsQuery) {
+    const cached = jobsCache.get(path);
+    if (cached && Date.now() - cached.timestamp < JOBS_CACHE_TTL_MS) {
+      return cached.data as T;
+    }
+  }
+
+  // Mutations invalidate jobs cache
+  if (isMutation && (path.includes("job") || path.includes("sync") || path.includes("custom-sites"))) {
+    clearJobsCache();
+  }
 
   const finalHeaders = new Headers(headers);
   finalHeaders.set("Accept", "application/json");
@@ -139,7 +165,13 @@ export async function apiRequest<T>(
 
   const text = await response.text();
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  const parsed = JSON.parse(text) as T;
+
+  if (isJobsQuery) {
+    jobsCache.set(path, { data: parsed, timestamp: Date.now() });
+  }
+
+  return parsed;
 }
 
 export const api = {

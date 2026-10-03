@@ -221,3 +221,35 @@ def test_refresh_single_job_endpoint_returns_202(api, seeded):
     login_seeded(api, "data_hunter")
     other_res = api.post(f"/api/v1/jobs/{job_id}/refresh")
     assert other_res.status_code == 404
+
+
+def test_jobs_list_cache_control_and_sql_query_count(api, seeded):
+    login_seeded(api, "ai_hunter")
+    res = api.get("/api/v1/jobs?page_size=100")
+    assert res.status_code == 200
+    assert res.headers.get("Cache-Control") == "private, max-age=30"
+
+    from sqlalchemy import event
+    from app.db.session import engine
+
+    query_count = 0
+
+    job_queries = []
+
+    def count_queries(conn, cursor, statement, parameters, context, executemany):
+        nonlocal query_count
+        query_count += 1
+        st_lower = statement.lower()
+        if "jobs" in st_lower or "job_matches" in st_lower or "job_web_sources" in st_lower:
+            job_queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count_queries)
+    try:
+        res = api.get("/api/v1/jobs?page_size=100")
+        assert res.status_code == 200
+        # Exactly 3-4 SQL queries for jobs (count, select jobs, selectinload matches, selectinload web_sources)
+        # Even with 100 jobs, N+1 queries are eliminated.
+        assert len(job_queries) <= 4
+        assert query_count <= 8
+    finally:
+        event.remove(engine, "before_cursor_execute", count_queries)

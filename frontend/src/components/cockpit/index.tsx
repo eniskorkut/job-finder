@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { CockpitHeader } from "./cockpit-header";
 import { ToastNotificationContainer } from "./toast-notification";
-import { CITY_DATABASE } from "./mock-data";
+import { KNOWN_CITIES } from "./city-coordinates";
+import { mapJobToDossier } from "./job-mapper";
 import { api } from "@/lib/api";
 import type { CityHub, Dossier, TabId, ToastItem } from "./types";
 
@@ -54,39 +55,17 @@ export function ExecutiveCockpit() {
   // Fetch real jobs from backend API using 30s cache
   const fetchBackendJobs = useCallback(async () => {
     try {
-      const data = await api.get<any>("/api/v1/jobs?page_size=100");
-      if (data && Array.isArray(data.items) && data.items.length > 0) {
-          const mapped: Dossier[] = data.items
-            .filter((item: any) => !item.is_mock)
-            .map((item: any) => ({
-              id: item.id,
-              title: item.title,
-              company: item.company,
-              location: item.location || "Remote",
-              salary: item.salary_text || "$180,000 - $240,000",
-              score: `${item.score || 94}% CV FIT`,
-              ref: `JOB-${item.id.slice(0, 6).toUpperCase()}`,
-              freshness: "YENİ EKLENDİ",
-              analysis:
-                item.description ||
-                "Özel kariyer kaynağından canlı olarak çekilen güncel pozisyon.",
-              skills: [
-                "Distributed Systems",
-                "Python FastAPI",
-                "Cloud Architecture",
-                "Next.js",
-              ],
-              tier: "Staff / Lead",
-              source: "Özel ATS Tarayıcısı",
-              telegram: "Kişisel VIP Kanalına Aktarıldı",
-              cityKey: "london",
-              cityName: "Londra",
-              application_url: item.application_url || "https://www.linkedin.com/jobs",
-            }));
-          setBackendDossiers(mapped);
-        }
+      const data = await api.get<{ items?: any[] }>("/api/v1/jobs?page_size=100");
+      if (data && Array.isArray(data.items)) {
+        const mapped: Dossier[] = data.items
+          .filter((item: any) => !item.is_mock)
+          .map(mapJobToDossier);
+        setBackendDossiers(mapped);
+      } else {
+        setBackendDossiers([]);
+      }
     } catch {
-      // Backend not running or offline, fallback cleanly to mock
+      setBackendDossiers([]);
     }
   }, []);
 
@@ -94,30 +73,56 @@ export function ExecutiveCockpit() {
     fetchBackendJobs();
   }, [fetchBackendJobs]);
 
-  // Merge database with any live backend dossiers
+  // Construct city hubs from real backend dossiers
   const mergedCities = useMemo(() => {
-    const base: Record<string, CityHub> = JSON.parse(JSON.stringify(CITY_DATABASE));
-    if (backendDossiers.length > 0 && base.london) {
-      base.london.dossiers = [...backendDossiers, ...base.london.dossiers];
-      base.london.count = base.london.dossiers.length;
+    const base: Record<string, CityHub> = {};
+    for (const [key, city] of Object.entries(KNOWN_CITIES)) {
+      base[key] = {
+        name: city.name,
+        lat: city.lat,
+        lng: city.lng,
+        count: 0,
+        dossiers: [],
+      };
     }
+
+    for (const dossier of backendDossiers) {
+      const cityKey = dossier.cityKey || "remote";
+      if (!base[cityKey]) {
+        base[cityKey] = {
+          name: dossier.cityName || "UZAKTAN / GLOBAL",
+          lat: 20.0,
+          lng: 0.0,
+          count: 0,
+          dossiers: [],
+        };
+      }
+      base[cityKey].dossiers.push(dossier);
+      base[cityKey].count = base[cityKey].dossiers.length;
+    }
+
     return base;
   }, [backendDossiers]);
 
+  // Auto-select city with jobs if current city has 0 jobs
+  useEffect(() => {
+    if (backendDossiers.length > 0) {
+      const currentCount = mergedCities[activeCityKey]?.count || 0;
+      if (currentCount === 0) {
+        const firstWithJobs = Object.keys(mergedCities).find(
+          (k) => mergedCities[k].count > 0
+        );
+        if (firstWithJobs) {
+          setActiveCityKey(firstWithJobs);
+        }
+      }
+    }
+  }, [backendDossiers, mergedCities, activeCityKey]);
+
   // Aggregate all dossiers for TabJobs
   const allDossiers = useMemo(() => {
-    const list: Dossier[] = [];
-    Object.entries(mergedCities).forEach(([cKey, hub]) => {
-      hub.dossiers.forEach((d) => {
-        list.push({
-          ...d,
-          cityKey: cKey,
-          cityName: hub.name,
-        });
-      });
-    });
-    return list;
-  }, [mergedCities]);
+    return backendDossiers;
+  }, [backendDossiers]);
 
   const handleOpenModal = (dossier: Dossier) => {
     setModalJob(dossier);
@@ -194,13 +199,15 @@ export function ExecutiveCockpit() {
         )}
       </main>
 
-      {/* Application & AI Cover Letter Modal */}
-      <JobDetailModal
-        job={modalJob}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        onShowToast={showToast}
-      />
+      {/* Application & Job Detail Modal - Lazy Mounted */}
+      {isModalOpen && modalJob && (
+        <JobDetailModal
+          job={modalJob}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          onShowToast={showToast}
+        />
+      )}
 
       {/* Floating Toast Notification Container */}
       <ToastNotificationContainer toasts={toasts} />

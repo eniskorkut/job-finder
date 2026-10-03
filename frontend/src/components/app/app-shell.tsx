@@ -75,6 +75,8 @@ function UserCard() {
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
     } finally {
+      api.clearPrivateCache();
+      api.setCacheScope(null);
       router.replace("/login");
       router.refresh();
     }

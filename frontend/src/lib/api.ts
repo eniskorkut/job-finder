@@ -88,16 +88,84 @@ async function parseError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, code, message, details);
 }
 
-interface JobsCacheEntry<T> {
-  data: T;
-  timestamp: number;
+export type CacheScope = string | null;
+
+let currentCacheScope: CacheScope = null;
+
+export function setCacheScope(scope: CacheScope): void {
+  currentCacheScope = scope;
 }
 
-const jobsCache = new Map<string, JobsCacheEntry<unknown>>();
-const JOBS_CACHE_TTL_MS = 30_000;
+export function getCacheScope(): CacheScope {
+  return currentCacheScope;
+}
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttlMs: number;
+}
+
+const privateCache = new Map<string, CacheEntry<unknown>>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+export function clearPrivateCache(): void {
+  privateCache.clear();
+  inFlightRequests.clear();
+}
 
 export function clearJobsCache(): void {
-  jobsCache.clear();
+  clearPrivateCache();
+}
+
+export function invalidateJobsCache(): void {
+  for (const key of privateCache.keys()) {
+    if (key.includes("/api/v1/jobs")) {
+      privateCache.delete(key);
+    }
+  }
+}
+
+export interface CachePolicy {
+  ttlMs: number;
+}
+
+export function getCachePolicy(path: string, method: string): CachePolicy | null {
+  if (method !== "GET") return null;
+
+  const pathname = path.split(/[?#]/)[0];
+
+  if (pathname === "/api/v1/jobs/stats") {
+    return { ttlMs: 30_000 };
+  }
+
+  if (pathname === "/api/v1/jobs/filters") {
+    return { ttlMs: 300_000 };
+  }
+
+  if (pathname === "/api/v1/jobs") {
+    return { ttlMs: 30_000 };
+  }
+
+  const jobDetailRegex = /^\/api\/v1\/jobs\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  if (jobDetailRegex.test(pathname)) {
+    return { ttlMs: 30_000 };
+  }
+
+  return null;
+}
+
+function isMutationInvalidating(path: string, method: string): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) return false;
+  const pathname = path.split(/[?#]/)[0];
+  return (
+    pathname.includes("/jobs") ||
+    pathname.includes("/sync") ||
+    pathname.includes("/custom-sites") ||
+    pathname.includes("/cvs") ||
+    pathname.includes("/preferences") ||
+    pathname.includes("/integrations")
+  );
 }
 
 export async function apiRequest<T>(
@@ -107,71 +175,99 @@ export async function apiRequest<T>(
   const method = (init.method ?? (body || formData ? "POST" : "GET")).toUpperCase();
   const isMutation = !["GET", "HEAD", "OPTIONS"].includes(method);
 
-  // 30s cache for jobs requests: zero network if requested within 30 seconds
-  const isJobsQuery = method === "GET" && path.includes("/api/v1/jobs");
-  if (isJobsQuery) {
-    const cached = jobsCache.get(path);
-    if (cached && Date.now() - cached.timestamp < JOBS_CACHE_TTL_MS) {
+  const policy = getCachePolicy(path, method);
+  const isCacheable = policy !== null && currentCacheScope !== null;
+  const cacheKey = isCacheable ? `${currentCacheScope}:${method}:${path}` : null;
+
+  if (cacheKey) {
+    const cached = privateCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < cached.ttlMs) {
       return cached.data as T;
     }
   }
 
-  // Mutations invalidate jobs cache
-  if (isMutation && (path.includes("job") || path.includes("sync") || path.includes("custom-sites"))) {
-    clearJobsCache();
+  // In-flight deduplication: only when cacheable and no explicit signal is given
+  const canDedupeInFlight = isCacheable && !init.signal;
+  if (canDedupeInFlight && cacheKey && inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey) as Promise<T>;
   }
 
-  const finalHeaders = new Headers(headers);
-  finalHeaders.set("Accept", "application/json");
+  const executeRequest = async (): Promise<T> => {
+    const finalHeaders = new Headers(headers);
+    finalHeaders.set("Accept", "application/json");
 
-  if (isMutation && !skipCsrf) {
-    await ensureCsrfToken();
-    const token = readCookie(CSRF_COOKIE);
-    if (token) finalHeaders.set(CSRF_HEADER, token);
-  }
+    if (isMutation && !skipCsrf) {
+      await ensureCsrfToken();
+      const token = readCookie(CSRF_COOKIE);
+      if (token) finalHeaders.set(CSRF_HEADER, token);
+    }
 
-  let payload: BodyInit | undefined;
-  if (formData) {
-    payload = formData;
-  } else if (body !== undefined) {
-    finalHeaders.set("Content-Type", "application/json");
-    payload = JSON.stringify(body);
-  }
+    let payload: BodyInit | undefined;
+    if (formData) {
+      payload = formData;
+    } else if (body !== undefined) {
+      finalHeaders.set("Content-Type", "application/json");
+      payload = JSON.stringify(body);
+    }
 
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      ...init,
-      method,
-      headers: finalHeaders,
-      body: payload,
-      credentials: "include",
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        ...init,
+        method,
+        headers: finalHeaders,
+        body: payload,
+        credentials: "include",
+      });
+    } catch {
+      throw new ApiError(
+        0,
+        "network_error",
+        "Sunucuya ulaşılamadı. Backend çalışıyor mu? (http://localhost:8000)",
+      );
+    }
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearPrivateCache();
+        setCacheScope(null);
+      }
+      throw await parseError(response);
+    }
+
+    // On successful mutation, invalidate jobs cache
+    if (isMutation && isMutationInvalidating(path, method)) {
+      invalidateJobsCache();
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const text = await response.text();
+    if (!text) return undefined as T;
+    const parsed = JSON.parse(text) as T;
+
+    if (cacheKey && policy) {
+      privateCache.set(cacheKey, {
+        data: parsed,
+        timestamp: Date.now(),
+        ttlMs: policy.ttlMs,
+      });
+    }
+
+    return parsed;
+  };
+
+  if (canDedupeInFlight && cacheKey) {
+    const promise = executeRequest().finally(() => {
+      inFlightRequests.delete(cacheKey);
     });
-  } catch {
-    throw new ApiError(
-      0,
-      "network_error",
-      "Sunucuya ulaşılamadı. Backend çalışıyor mu? (http://localhost:8000)",
-    );
+    inFlightRequests.set(cacheKey, promise);
+    return promise;
   }
 
-  if (!response.ok) {
-    throw await parseError(response);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  const text = await response.text();
-  if (!text) return undefined as T;
-  const parsed = JSON.parse(text) as T;
-
-  if (isJobsQuery) {
-    jobsCache.set(path, { data: parsed, timestamp: Date.now() });
-  }
-
-  return parsed;
+  return executeRequest();
 }
 
 export const api = {
@@ -187,6 +283,11 @@ export const api = {
     apiRequest<T>(path, { ...init, method: "DELETE" }),
   upload: <T>(path: string, formData: FormData) =>
     apiRequest<T>(path, { method: "POST", formData }),
+  setCacheScope,
+  getCacheScope,
+  clearPrivateCache,
+  clearJobsCache,
+  invalidateJobsCache,
 };
 
 export function buildQuery(

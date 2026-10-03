@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import contains_eager, selectinload
 
 from app.models.job import Job, JobMatch, JobWebSource
 from app.models.mail_account import MailAccount
@@ -105,8 +105,8 @@ class JobRepository(Repository[Job]):
 
         stmt = apply_filters(
             self._base_query(user_id)
-            .options(selectinload(Job.match), selectinload(Job.web_sources))
             .outerjoin(JobMatch, JobMatch.job_id == Job.id)
+            .options(contains_eager(Job.match))
         )
         if status:
             stmt = stmt.where(JobMatch.status == status)

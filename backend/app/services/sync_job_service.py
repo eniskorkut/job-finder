@@ -249,6 +249,7 @@ class SyncRunner:
         client_factory: ClientFactory | None = None,
         llm_factory=None,
         telegram_factory=None,
+        web_fetcher=None,
         now: datetime | None = None,
         clock_now: datetime | None = None,
         execution_hook: object | None = None,
@@ -258,9 +259,17 @@ class SyncRunner:
         self.client_factory = client_factory or ClientFactory()
         self.llm_factory = llm_factory
         self.telegram_factory = telegram_factory
+        from app.integrations.web_fetch.fetcher import SafeWebFetcher
+
+        self.web_fetcher = web_fetcher or SafeWebFetcher()
+        self._owns_web_fetcher = web_fetcher is None
         self._now = now
         self._explicit_clock_now = clock_now
         self._execution_hook = execution_hook
+
+    async def close(self) -> None:
+        if getattr(self, "_owns_web_fetcher", False) and getattr(self, "web_fetcher", None):
+            await self.web_fetcher.close()
 
     def _clock_now(self) -> datetime:
         return self._explicit_clock_now or datetime.now(timezone.utc)
@@ -388,6 +397,7 @@ class SyncRunner:
     async def _execute_site_crawl(self, job_id: uuid.UUID) -> SyncJobStatus:
         from app.services.site_crawler_service import SiteCrawlerService
 
+        # Phase 0: Quick snapshot read (no transaction held)
         with self.session_factory() as session:
             job = session.get(SyncJob, job_id)
             if job is None:
@@ -402,11 +412,34 @@ class SyncRunner:
             self._finish_job(job_id, SyncJobStatus.CANCELLED)
             return SyncJobStatus.CANCELLED
 
+        # Phase 1: Pure network fetch & parse (DB connection is closed)
+        service = SiteCrawlerService(db=None, fetcher=self.web_fetcher)
+        crawl_res = await service.fetch_and_parse(url)
+
+        if not crawl_res.success:
+            if crawl_res.is_transient:
+                logger.warning(
+                    "Site crawler transient failure for job %s: %s (releasing for bounded retry)",
+                    job_id,
+                    crawl_res.message,
+                )
+                self._release_job(job_id, error=crawl_res.message)
+                return SyncJobStatus.QUEUED
+            else:
+                logger.warning(
+                    "Site crawler permanent failure for job %s: %s",
+                    job_id,
+                    crawl_res.message,
+                )
+                self._finish_job(job_id, SyncJobStatus.FAILED, error=crawl_res.message)
+                return SyncJobStatus.FAILED
+
+        # Phase 2: Batch DB persistence in a short-lived transaction
         try:
             with self.session_factory() as session:
-                user = session.get(User, user_id)
-                service = SiteCrawlerService(session)
-                res = await service.crawl_site(user, url)
+                res = service.persist_postings_batch(
+                    session, user_id, crawl_res.url, crawl_res.postings
+                )
                 session.commit()
 
             with self.session_factory() as session:
@@ -422,11 +455,10 @@ class SyncRunner:
                     }
                 session.commit()
 
-            status = SyncJobStatus.COMPLETED if res.success else SyncJobStatus.FAILED
-            self._finish_job(job_id, status, error=res.message if not res.success else None)
-            return status
+            self._finish_job(job_id, SyncJobStatus.COMPLETED)
+            return SyncJobStatus.COMPLETED
         except Exception as exc:
-            logger.exception("Site tarama işi başarısız oldu: %s", exc)
+            logger.exception("Site tarama DB kayıt hatası: %s", exc)
             self._finish_job(job_id, SyncJobStatus.FAILED, error=str(exc))
             return SyncJobStatus.FAILED
 

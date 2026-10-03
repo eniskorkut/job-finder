@@ -86,9 +86,12 @@ async def run_worker(
             except Exception:
                 pass
 
-    return await runner.run_forever(
-        once=once, poll_seconds=poll_seconds, shutdown_event=event
-    )
+    try:
+        return await runner.run_forever(
+            once=once, poll_seconds=poll_seconds, shutdown_event=event
+        )
+    finally:
+        await runner.close()
 
 
 def main(argv: list[str] | None = None) -> int:

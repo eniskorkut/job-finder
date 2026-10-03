@@ -44,7 +44,7 @@ def list_jobs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> Page[JobRead]:
-    response.headers["Cache-Control"] = "private, max-age=30"
+    response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
     items, total = JobService(db).list(
         user,
         search=search,
@@ -67,12 +67,14 @@ def list_jobs(
 
 
 @router.get("/stats", response_model=JobStats)
-def read_job_stats(user: CurrentUser, db: DbSession) -> JobStats:
+def read_job_stats(user: CurrentUser, db: DbSession, response: Response) -> JobStats:
+    response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
     return JobService(db).stats(user)
 
 
 @router.get("/filters", response_model=JobFilterOptions)
-def read_filter_options(user: CurrentUser, db: DbSession) -> JobFilterOptions:
+def read_filter_options(user: CurrentUser, db: DbSession, response: Response) -> JobFilterOptions:
+    response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
     return JobService(db).filter_options(user)
 
 
@@ -159,7 +161,10 @@ def refresh_single_job(
 
 
 @router.get("/{job_id}", response_model=JobDetail)
-def read_job(job_id: uuid.UUID, user: CurrentUser, db: DbSession) -> JobDetail:
+def read_job(
+    job_id: uuid.UUID, user: CurrentUser, db: DbSession, response: Response
+) -> JobDetail:
+    response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
     service = JobService(db)
     detail = service.get_detail(user, job_id)
     service.mark_viewed(user, job_id)

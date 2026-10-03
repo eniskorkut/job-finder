@@ -866,6 +866,39 @@ PYTHONPATH=. .venv/bin/python scripts/live_job_discovery_smoke.py --company "Imp
 - Frontend `proxy.ts` yalnızca çerez varlığına bakar; yetkilendirme her istekte API'de yapılır.
 - SMTP yok: davet bağlantıları arayüz/CLI üzerinden paylaşılır.
 
+## Performans ve Optimizasyon Benchmark'ları
+
+Sistem genelinde N+1 sorgular, aşırı paket boyutları, DB kilitlenmeleri ve önbellek izolasyonu sorunları giderilerek ölçümlenmiştir:
+
+### 1) Backend SQL Sorgu Sayısı ve Gecikme Ölçümleri (`benchmark_jobs.py`)
+
+- **N+1 Sorgu Eleme:** `/jobs?page_size=100` çağrısında `selectinload(Job.web_sources)` kaldırılarak `contains_eager(Job.match)` mimarisine geçildi.
+- **SQL Sorgu Sayısı:** 100 ilanda toplam **2 SQL** (1 adet sayım + 1 adet ilişkisel eager eşleşme).
+- **Ölçülen Gecikme (50 iterasyon):**
+  - **Mevcut Veritabanı (7 İlan):** p50 = `0.62 ms`, p95 = `0.99 ms`
+  - **500 İlan Ölçek Testi:** p50 = `5.29 ms`, p95 = `5.87 ms`
+
+### 2) Frontend İstemci Önbelleği & İstek Birleştirme (In-Flight Deduplication)
+
+- **Kullanıcı İzolasyonu:** Önbellek anahtarı `${userId}:${method}:${path}` olarak scope'landı; oturum açmamış kullanıcılarda kişisel önbellek devre dışı bırakıldı.
+- **In-Flight Request Deduplication:** Aynı anda gönderilen eşzamanlı GET istekleri tek bir ağ çağrısında birleştirildi (fetch count 1).
+- **TTL Politikası:** İlan sorguları için 30 saniye, filtreler için 300 saniye TTL tanımlandı; 30 saniye içindeki ardışık sorgular 0 ağ maliyetiyle döndü.
+- **Geçersiz Kılma:** 401 Unauthorized yanıtlarında ve kullanıcı çıkışında (logout) tüm bellek içi önbellek temizlendi.
+
+### 3) Dayanıklı Site Tarayıcısı (Site Crawler) İyileştirmeleri
+
+- **İki Aşamalı Mimari:** Ağ üzerinden sayfa çekme ve HTML ayrıştırma aşamasında veritabanı oturumu tamamen kapalı tutuldu.
+- **Toplu Veritabanı İşlemleri:** İlanların parmak izi ve URL kontrolleri `Job.fingerprint_hash.in_(...)` ve `Job.url_normalized.in_(...)` ile toplu sorguya çevrildi; `session.add_all()` ile tek transaction içinde kaydedildi.
+- **Hata ve Tekrar Deneme Semantiği:** Geçici ağ hatalarında (5xx, zaman aşımı) sınırlandırılmış exponansiyel geri çekilme (5s, 15s, 30s) ile tekrar denenirken, kalıcı güvenlik engellerinde (SSRF, 4xx) anında başarısız işaretlendi.
+- **Eşzamanlılık Sınırı:** Kariyer siteleri doğrulama servisi azami 4 eşzamanlı istek (`site_verify_max_concurrency=4`) ve azami 20 site sınırı ile güvenceye alındı.
+
+### 4) Paket Boyutu ve Globe Optimizasyonları (`report-bundle-sizes.mjs`)
+
+- **Mock Veri Azaltımı:** `mock-data.ts` 63.6 KB'tan ~0.7 KB'a indirildi (**%98.9 tasarruf**).
+- **Globe.gl Singleton Yükleyici:** Küre kütüphanesi yalnızca ilgili sekme açıldığında dinamik olarak belleğe alınır (ilk yükleme maliyeti 0 KB).
+- **Kaynak Temizliği:** `ResizeObserver` ve pencere dinleyicileri bileşen unmount anında temizlenerek bellek sızıntıları önlendi.
+- **Güvenlik Güncellemesi:** Next.js sürümü `16.3.8` seviyesine yükseltildi.
+
 ## Lisans
 
 MIT

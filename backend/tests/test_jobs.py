@@ -201,6 +201,49 @@ def test_job_read_and_detail_includes_phase4_fields(api, seeded):
     detail = detail_res.json()
     assert "web_sources" in detail
     assert isinstance(detail["web_sources"], list)
+    assert "sources" in detail
+    assert isinstance(detail["sources"], list)
+
+
+def test_job_detail_includes_mail_sources(api, seeded, db):
+    from app.models.job import Job
+    from app.models.mail_account import MailAccount
+    from app.models.sync_job import JobSource
+
+    login_seeded(api, "ai_hunter")
+    jobs_res = api.get("/api/v1/jobs?page_size=1")
+    job_id = jobs_res.json()["items"][0]["id"]
+
+    import uuid as _uuid
+    job_uuid = _uuid.UUID(job_id)
+    job = db.query(Job).filter(Job.id == job_uuid).one()
+    account = MailAccount(
+        user_id=job.user_id,
+        provider="gmail",
+        email_address="hunter_alerts@gmail.com",
+    )
+    db.add(account)
+    db.flush()
+
+    source = JobSource(
+        user_id=job.user_id,
+        job_id=job.id,
+        mail_account_id=account.id,
+        provider="gmail",
+        provider_message_id="msg-unique-test",
+        sender="jobs-noreply@linkedin.com",
+        subject="Senior AI Role",
+    )
+    db.add(source)
+    db.commit()
+
+    detail_res = api.get(f"/api/v1/jobs/{job_id}")
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert len(detail["sources"]) >= 1
+    found = next((s for s in detail["sources"] if s["provider_message_id"] == "msg-unique-test"), None)
+    assert found is not None
+    assert found["account_email"] == "hunter_alerts@gmail.com"
 
 
 def test_refresh_single_job_endpoint_returns_202(api, seeded):
@@ -227,7 +270,7 @@ def test_jobs_list_cache_control_and_sql_query_count(api, seeded):
     login_seeded(api, "ai_hunter")
     res = api.get("/api/v1/jobs?page_size=100")
     assert res.status_code == 200
-    assert res.headers.get("Cache-Control") == "private, max-age=30"
+    assert res.headers.get("Cache-Control") == "private, no-store, max-age=0, must-revalidate"
 
     from sqlalchemy import event
     from app.db.session import engine
@@ -247,9 +290,9 @@ def test_jobs_list_cache_control_and_sql_query_count(api, seeded):
     try:
         res = api.get("/api/v1/jobs?page_size=100")
         assert res.status_code == 200
-        # Exactly 3-4 SQL queries for jobs (count, select jobs, selectinload matches, selectinload web_sources)
-        # Even with 100 jobs, N+1 queries are eliminated.
-        assert len(job_queries) <= 4
-        assert query_count <= 8
+        # Exactly 2 SQL queries for jobs (1 for count, 1 for jobs with eager match)
+        # Even with 100 jobs, N+1 queries and web_sources overhead are eliminated.
+        assert len(job_queries) <= 2
+        assert query_count <= 6
     finally:
         event.remove(engine, "before_cursor_execute", count_queries)

@@ -119,6 +119,7 @@ export interface Job {
   freshness_status?: FreshnessStatus;
   availability_status?: AvailabilityStatus;
   enrichment_status?: EnrichmentStatus;
+  description?: string | null;
 }
 
 export interface JobSource {
@@ -620,3 +621,20 @@ export interface InvitationPublic {
   invited_by: string | null;
   message: string | null;
 }
+
+export interface SiteVerificationItem {
+  site: string;
+  status: "ok" | "error" | string;
+  status_code: number | null;
+  jobs_found: number;
+  message: string | null;
+}
+
+export interface VerifySitesResponse {
+  success: boolean;
+  total_checked: number;
+  active_sites: number;
+  results: SiteVerificationItem[];
+  message: string;
+}
+

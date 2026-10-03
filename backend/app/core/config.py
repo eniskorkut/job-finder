@@ -159,6 +159,7 @@ class Settings(BaseSettings):
     web_fetch_max_redirects: int = 5
     web_fetch_allowed_ports: str = "80,443"
     web_fetch_retry_max_attempts: int = 3
+    site_verify_max_concurrency: int = 4
     web_fetch_user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 (JobHunter/1.0)"

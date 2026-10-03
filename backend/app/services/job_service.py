@@ -99,6 +99,7 @@ class JobService:
         for source in JobSourceRepository(self.db).list_for_job(job.id):
             item = JobSourceRead.model_validate(source)
             item.account_email = accounts.get(source.mail_account_id)
+            sources.append(item)
         detail.sources = sources
 
         from app.repositories.jobs import JobWebSourceRepository

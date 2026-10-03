@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import json
 import logging
 import re
@@ -14,6 +15,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.integrations.parsing.dedupe import fingerprint_hash, normalize_url
 from app.integrations.web_fetch.fetcher import (
     FetchResult,
@@ -43,10 +45,36 @@ from app.services.job_enrichment.url_utils import compute_content_hash, extract_
 logger = logging.getLogger("jobhunter.site_crawler")
 
 
+@dataclass
+class CrawlFetchResult:
+    success: bool
+    url: str
+    postings: list[ExtractedJobData]
+    message: str
+    is_transient: bool = False
+    status_code: int | None = None
+
+
+@dataclass
+class _CandidatePosting:
+    title: str
+    company: str
+    location: str | None
+    description: str
+    target_url: str
+    normalized_target: str
+    fingerprint: str
+    post: ExtractedJobData
+
+
 class SiteCrawlerService:
-    def __init__(self, db: Session) -> None:
+    def __init__(
+        self,
+        db: Session | None = None,
+        fetcher: SafeWebFetcher | None = None,
+    ) -> None:
         self.db = db
-        self.fetcher = SafeWebFetcher()
+        self.fetcher = fetcher or SafeWebFetcher()
 
     @staticmethod
     def normalize_input_url(raw_url: str) -> str:
@@ -59,72 +87,88 @@ class SiteCrawlerService:
         # Rebuild without fragment
         return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ""))
 
-    async def crawl_site(self, user: User, raw_url: str) -> CrawlSiteResponse:
+    async def fetch_and_parse(self, raw_url: str) -> CrawlFetchResult:
+        """Phase 1: Fetch and parse postings without opening or holding any database transaction."""
         url = self.normalize_input_url(raw_url)
         if not url:
-            return CrawlSiteResponse(
+            return CrawlFetchResult(
                 success=False,
                 url=raw_url,
-                jobs_found=0,
-                jobs_created=0,
-                jobs=[],
+                postings=[],
                 message="Geçerli bir URL adresi girilmedi.",
+                is_transient=False,
             )
 
         try:
             fetch_result = await self.fetcher.fetch(url)
         except SSRFProtectionError as err:
             logger.warning("SSRF blocked URL: %s (%s)", url, err)
-            return CrawlSiteResponse(
+            return CrawlFetchResult(
                 success=False,
                 url=url,
-                jobs_found=0,
-                jobs_created=0,
-                jobs=[],
+                postings=[],
                 message="Güvenlik nedeniyle bu adrese erişim engellendi (Yerel/Özel Ağ Koruması).",
+                is_transient=False,
             )
         except LinkedInFetchForbiddenError:
-            return CrawlSiteResponse(
+            return CrawlFetchResult(
                 success=False,
                 url=url,
-                jobs_found=0,
-                jobs_created=0,
-                jobs=[],
+                postings=[],
                 message="LinkedIn sayfalarının doğrudan taranması desteklenmemektedir.",
+                is_transient=False,
             )
         except WebFetchError as err:
             logger.warning("Web fetch error for %s: %s", url, err)
-            return CrawlSiteResponse(
+            # Transient error if retryable status or network timeout
+            is_transient = True
+            return CrawlFetchResult(
                 success=False,
                 url=url,
-                jobs_found=0,
-                jobs_created=0,
-                jobs=[],
+                postings=[],
                 message=f"Hedef siteye erişilemedi: {err}",
+                is_transient=is_transient,
             )
         except Exception as err:
             logger.exception("Unexpected error fetching %s: %s", url, err)
-            return CrawlSiteResponse(
+            return CrawlFetchResult(
                 success=False,
                 url=url,
-                jobs_found=0,
-                jobs_created=0,
-                jobs=[],
+                postings=[],
                 message=f"Beklenmeyen bir hata oluştu: {err}",
+                is_transient=True,
             )
 
         if fetch_result.status_code != 200:
-            return CrawlSiteResponse(
+            is_transient = fetch_result.status_code in {408, 429, 500, 502, 503, 504}
+            return CrawlFetchResult(
                 success=False,
                 url=url,
-                jobs_found=0,
-                jobs_created=0,
-                jobs=[],
+                postings=[],
                 message=f"Hedef site HTTP {fetch_result.status_code} yanıtı döndürdü.",
+                is_transient=is_transient,
+                status_code=fetch_result.status_code,
             )
 
         extracted_postings = self.extract_all_postings(fetch_result.content, url)
-        if not extracted_postings:
+        return CrawlFetchResult(
+            success=True,
+            url=url,
+            postings=extracted_postings,
+            message="Site başarıyla çekildi ve çözümlendi.",
+            is_transient=False,
+            status_code=200,
+        )
+
+    def persist_postings_batch(
+        self,
+        db: Session,
+        user_id: uuid.UUID,
+        url: str,
+        postings: list[ExtractedJobData],
+    ) -> CrawlSiteResponse:
+        """Phase 2: Short-lived DB transaction with batch lookup and batch inserts."""
+        if not postings:
             return CrawlSiteResponse(
                 success=True,
                 url=url,
@@ -134,13 +178,11 @@ class SiteCrawlerService:
                 message="Siteye başarıyla bağlanıldı (HTTP 200), ancak sayfada açık ilan formatı bulunamadı.",
             )
 
-        created_jobs: list[CrawlJobItem] = []
-        jobs_created_count = 0
-        now = datetime.now(timezone.utc)
         domain = extract_domain(url) or "company"
         default_company = domain.split(".")[0].capitalize()
 
-        for post in extracted_postings:
+        candidates: list[_CandidatePosting] = []
+        for post in postings:
             title = (post.title or "").strip()[:300]
             if not title:
                 continue
@@ -158,95 +200,155 @@ class SiteCrawlerService:
                 job_id=None,
             )
 
-            # Check if job already exists for this user
-            existing = self.db.scalars(
-                select(Job).where(
-                    Job.user_id == user.id,
-                    Job.fingerprint_hash == fingerprint,
-                )
-            ).first()
-
-            is_new = False
-            if existing is None:
-                # Also check normalized URL
-                existing = self.db.scalars(
-                    select(Job).where(
-                        Job.user_id == user.id,
-                        Job.url_normalized == normalized_target,
-                    )
-                ).first()
-
-            if existing is None:
-                is_new = True
-                jobs_created_count += 1
-                job = Job(
-                    user_id=user.id,
-                    source="official_ats",
+            candidates.append(
+                _CandidatePosting(
                     title=title,
                     company=company,
                     location=location,
-                    work_mode=post.work_mode or WorkMode.UNKNOWN.value,
-                    employment_type=post.employment_type,
                     description=description,
-                    url=target_url,
-                    url_normalized=normalized_target,
-                    canonical_url=target_url,
-                    company_job_url=target_url,
+                    target_url=target_url,
+                    normalized_target=normalized_target,
+                    fingerprint=fingerprint,
+                    post=post,
+                )
+            )
+
+        if not candidates:
+            return CrawlSiteResponse(
+                success=True,
+                url=url,
+                jobs_found=0,
+                jobs_created=0,
+                jobs=[],
+                message="Siteye başarıyla bağlanıldı (HTTP 200), ancak geçerli ilan başlığı bulunamadı.",
+            )
+
+        all_fingerprints = [c.fingerprint for c in candidates]
+        all_normalized_urls = [c.normalized_target for c in candidates]
+
+        # Batch lookup for existing jobs by fingerprint
+        existing_by_fp = {
+            j.fingerprint_hash: j
+            for j in db.scalars(
+                select(Job).where(
+                    Job.user_id == user_id,
+                    Job.fingerprint_hash.in_(all_fingerprints),
+                )
+            ).all()
+            if j.fingerprint_hash
+        }
+
+        # Batch lookup for existing jobs by normalized url
+        existing_by_url = {
+            j.url_normalized: j
+            for j in db.scalars(
+                select(Job).where(
+                    Job.user_id == user_id,
+                    Job.url_normalized.in_(all_normalized_urls),
+                )
+            ).all()
+            if j.url_normalized
+        }
+
+        created_jobs: list[CrawlJobItem] = []
+        jobs_created_count = 0
+        now = datetime.now(timezone.utc)
+
+        new_jobs: list[Job] = []
+        new_matches: list[JobMatch] = []
+        new_sources: list[JobWebSource] = []
+
+        for c in candidates:
+            existing = existing_by_fp.get(c.fingerprint) or existing_by_url.get(c.normalized_target)
+
+            if existing is None:
+                jobs_created_count += 1
+                job_id = uuid.uuid4()
+
+                if c.post.date_posted:
+                    posted_at = c.post.date_posted
+                    posted_at_source = "web_crawler"
+                    posted_at_confidence = "high"
+                else:
+                    posted_at = None
+                    posted_at_source = "discovery_date"
+                    posted_at_confidence = "low"
+
+                desc_len = len(c.description)
+                desc_status = (
+                    DescriptionStatus.OK.value
+                    if desc_len >= 100
+                    else DescriptionStatus.INSUFFICIENT.value
+                )
+
+                job = Job(
+                    id=job_id,
+                    user_id=user_id,
+                    source="official_ats",
+                    title=c.title,
+                    company=c.company,
+                    location=c.location,
+                    work_mode=c.post.work_mode or WorkMode.UNKNOWN.value,
+                    employment_type=c.post.employment_type,
+                    description=c.description,
+                    url=c.target_url,
+                    url_normalized=c.normalized_target,
+                    canonical_url=c.target_url,
+                    company_job_url=c.target_url,
                     source_url=url,
-                    fingerprint_hash=fingerprint,
-                    description_status=DescriptionStatus.OK.value if len(description) >= 100 else DescriptionStatus.INSUFFICIENT.value,
-                    posted_at=post.date_posted or now,
-                    posted_at_source="web_crawler",
-                    posted_at_confidence="high",
+                    fingerprint_hash=c.fingerprint,
+                    description_status=desc_status,
+                    posted_at=posted_at,
+                    posted_at_source=posted_at_source,
+                    posted_at_confidence=posted_at_confidence,
                     freshness_status="active",
-                    availability_status="available",
+                    availability_status="active",
                     enrichment_status="enriched",
-                    content_hash=compute_content_hash(description),
+                    content_hash=compute_content_hash(c.description),
                     discovered_at=now,
                     is_mock=False,
                     raw_payload={
                         "source": "site_crawler",
                         "discovered_url": url,
-                        "parser_source": post.parser_source,
+                        "parser_source": c.post.parser_source,
                     },
                 )
-                self.db.add(job)
-                self.db.flush()
+                new_jobs.append(job)
+                # Register in mapping to prevent duplicates within the same batch
+                existing_by_fp[c.fingerprint] = job
+                existing_by_url[c.normalized_target] = job
 
-                # Create JobMatch
                 match = JobMatch(
-                    user_id=user.id,
-                    job_id=job.id,
+                    user_id=user_id,
+                    job_id=job_id,
                     score=None,
                     matched_skills=[],
                     missing_skills=[],
                     status="new",
                     is_mock=False,
                 )
-                self.db.add(match)
+                new_matches.append(match)
 
-                # Add JobWebSource
                 web_source = JobWebSource(
-                    user_id=user.id,
-                    job_id=job.id,
-                    url=target_url,
-                    normalized_url=normalized_target,
+                    user_id=user_id,
+                    job_id=job_id,
+                    url=c.target_url,
+                    normalized_url=c.normalized_target,
                     host=domain,
                     source_type="official_ats",
                     trust_level=90,
                     match_confidence="high",
-                    title=title,
-                    snippet=description[:200] if description else None,
+                    title=c.title,
+                    snippet=c.description[:200] if c.description else None,
                     http_status=200,
-                    content_hash=compute_content_hash(description),
+                    content_hash=compute_content_hash(c.description),
                     selected_as_canonical=True,
                 )
-                self.db.add(web_source)
-                self.db.flush()
+                new_sources.append(web_source)
 
                 created_jobs.append(
                     CrawlJobItem(
-                        id=job.id,
+                        id=job_id,
                         title=job.title,
                         company=job.company,
                         location=job.location,
@@ -258,14 +360,13 @@ class SiteCrawlerService:
             else:
                 # Existing job: enrich description if it was insufficient
                 if (
-                    description
-                    and len(description) > len(existing.description or "")
+                    c.description
+                    and len(c.description) > len(existing.description or "")
                     and existing.description_status == DescriptionStatus.INSUFFICIENT.value
                 ):
-                    existing.description = description
+                    existing.description = c.description
                     existing.description_status = DescriptionStatus.OK.value
-                    existing.content_hash = compute_content_hash(description)
-                    self.db.flush()
+                    existing.content_hash = compute_content_hash(c.description)
 
                 created_jobs.append(
                     CrawlJobItem(
@@ -279,17 +380,45 @@ class SiteCrawlerService:
                     )
                 )
 
-        self.db.commit()
+        if new_jobs:
+            db.add_all(new_jobs)
+        if new_matches:
+            db.add_all(new_matches)
+        if new_sources:
+            db.add_all(new_sources)
+        db.flush()
 
-        msg = f"{len(extracted_postings)} ilan tespit edildi; {jobs_created_count} yeni ilan sisteme eklendi."
+        msg = f"{len(candidates)} ilan tespit edildi; {jobs_created_count} yeni ilan sisteme eklendi."
         return CrawlSiteResponse(
             success=True,
             url=url,
-            jobs_found=len(extracted_postings),
+            jobs_found=len(candidates),
             jobs_created=jobs_created_count,
             jobs=created_jobs,
             message=msg,
         )
+
+    async def crawl_site(self, user: User, raw_url: str) -> CrawlSiteResponse:
+        """Convenience method combining fetch_and_parse and persist_postings_batch."""
+        fetch_res = await self.fetch_and_parse(raw_url)
+        if not fetch_res.success:
+            return CrawlSiteResponse(
+                success=False,
+                url=fetch_res.url,
+                jobs_found=0,
+                jobs_created=0,
+                jobs=[],
+                message=fetch_res.message,
+            )
+
+        if self.db is None:
+            raise RuntimeError("Database session is required to persist crawled postings.")
+
+        response = self.persist_postings_batch(
+            self.db, user.id, fetch_res.url, fetch_res.postings
+        )
+        self.db.commit()
+        return response
 
     def extract_all_postings(self, html: str, page_url: str) -> list[ExtractedJobData]:
         postings: list[ExtractedJobData] = []
@@ -396,8 +525,6 @@ class SiteCrawlerService:
         default_company = domain.split(".")[0].capitalize()
 
         # Check common job board patterns
-        # Pattern A: Greenhouse / Lever links: <a href=".../jobs/..." class="...">
-        # Pattern B: elements with data-job-id or class containing "opening", "job-item", "posting"
         candidates = soup.find_all(
             ["div", "li", "tr", "section", "article"],
             class_=lambda c: c and any(k in str(c).lower() for k in ["opening", "posting", "job-item", "career-item", "job_listing"]),
@@ -446,7 +573,8 @@ class SiteCrawlerService:
     async def verify_sites(self, sites: list[str]) -> VerifySitesResponse:
         results: list[SiteVerificationItem] = []
         active_count = 0
-        semaphore = asyncio.Semaphore(4)
+        concurrency = max(1, min(20, settings.site_verify_max_concurrency))
+        semaphore = asyncio.Semaphore(concurrency)
 
         async def _check_one(raw_s: str) -> SiteVerificationItem:
             nonlocal active_count

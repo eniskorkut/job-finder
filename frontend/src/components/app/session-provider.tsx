@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 
+import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/hooks";
 import type { SessionResponse, SessionUser } from "@/lib/types";
 
@@ -23,6 +24,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const { data, error, loading, refetch } = useApiQuery<SessionResponse>(
     "/api/v1/auth/session",
   );
+
+  useEffect(() => {
+    if (data?.user?.id) {
+      api.setCacheScope(data.user.id);
+    } else if (!loading && !data?.user) {
+      api.clearPrivateCache();
+      api.setCacheScope(null);
+    }
+  }, [data?.user, loading]);
 
   return (
     <SessionContext.Provider

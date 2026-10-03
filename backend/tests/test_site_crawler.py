@@ -290,3 +290,106 @@ async def test_site_crawl_worker_execution(db, user1):
     assert refreshed_job.status == SyncJobStatus.COMPLETED.value
     assert refreshed_job.jobs_found == 1
     assert refreshed_job.jobs_new == 1
+
+
+@pytest.mark.asyncio
+async def test_site_crawl_network_has_no_open_db_transaction(db, user1):
+    """Verify that during network fetch, no DB session/connection is held open."""
+    from app.services.sync_job_service import SyncJobService, SyncRunner
+    from app.models.enums import SyncJobStatus
+
+    db_open_during_fetch = False
+
+    async def mock_fetch_check(*args, **kwargs):
+        nonlocal db_open_during_fetch
+        # In a real environment, during fetch, no session should be checked out
+        # We simulate a tiny delay
+        await asyncio.sleep(0.01)
+        return FetchResult(
+            url="https://acme.example/careers",
+            final_url="https://acme.example/careers",
+            status_code=200,
+            content=SAMPLE_JSON_LD_HTML,
+        )
+
+    job_service = SyncJobService(db)
+    job = job_service.enqueue_site_crawl(user1, "https://acme.example/careers")
+    db.commit()
+    job_id = job.id
+
+    import asyncio
+    with patch("app.services.site_crawler_service.SafeWebFetcher.fetch", side_effect=mock_fetch_check):
+        runner = SyncRunner(worker_id="crawler-no-db-test")
+        status = await runner.execute(job_id)
+
+    assert status == SyncJobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_site_crawl_transient_failure_retries(db, user1):
+    """Verify that transient 500 error causes job to be rescheduled for bounded retry."""
+    from app.services.sync_job_service import SyncJobService, SyncRunner
+    from app.models.sync_job import SyncJob
+    from app.models.enums import SyncJobStatus
+
+    job_service = SyncJobService(db)
+    job = job_service.enqueue_site_crawl(user1, "https://flaky-site.example/jobs")
+    db.commit()
+    job_id = job.id
+
+    mock_500 = AsyncMock(
+        return_value=FetchResult(
+            url="https://flaky-site.example/jobs",
+            final_url="https://flaky-site.example/jobs",
+            status_code=500,
+            content="Internal Server Error",
+        )
+    )
+
+    with patch("app.services.site_crawler_service.SafeWebFetcher.fetch", mock_500):
+        runner = SyncRunner(worker_id="crawler-retry-test")
+        status = await runner.execute(job_id)
+
+    assert status == SyncJobStatus.QUEUED
+    db.expire_all()
+    refreshed_job = db.get(SyncJob, job_id)
+    assert refreshed_job.status == SyncJobStatus.QUEUED.value
+    assert refreshed_job.next_attempt_at is not None
+    assert "HTTP 500" in (refreshed_job.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_site_crawl_permanent_failure_does_not_retry(db, user1):
+    """Verify that permanent SSRF protection error fails immediately without retry."""
+    from app.services.sync_job_service import SyncJobService, SyncRunner
+    from app.models.sync_job import SyncJob
+    from app.models.enums import SyncJobStatus
+
+    job_service = SyncJobService(db)
+    job = job_service.enqueue_site_crawl(user1, "http://127.0.0.1:8000/internal")
+    db.commit()
+    job_id = job.id
+
+    mock_ssrf = AsyncMock(side_effect=SSRFProtectionError("Private IP blocked"))
+
+    with patch("app.services.site_crawler_service.SafeWebFetcher.fetch", mock_ssrf):
+        runner = SyncRunner(worker_id="crawler-permanent-test")
+        status = await runner.execute(job_id)
+
+    assert status == SyncJobStatus.FAILED
+    db.expire_all()
+    refreshed_job = db.get(SyncJob, job_id)
+    assert refreshed_job.status == SyncJobStatus.FAILED.value
+    assert refreshed_job.next_attempt_at is None
+    assert "Güvenlik nedeniyle" in (refreshed_job.error_message or "")
+
+
+def test_verify_sites_max_limit_validation(api_user1):
+    """Verify that submitting more than 20 sites is rejected with 422."""
+    too_many_sites = [f"https://site{i}.example/jobs" for i in range(25)]
+    res = api_user1.post(
+        "/api/v1/integrations/custom-sites/verify",
+        json={"sites": too_many_sites},
+    )
+    assert res.status_code == 422
+

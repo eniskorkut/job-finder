@@ -203,7 +203,7 @@ class CrawlJobEnqueuedResponse(BaseModel):
 
 
 class VerifySitesRequest(BaseModel):
-    sites: list[str] = Field(default_factory=list)
+    sites: list[str] = Field(default_factory=list, max_length=20)
 
 
 class SiteVerificationItem(BaseModel):

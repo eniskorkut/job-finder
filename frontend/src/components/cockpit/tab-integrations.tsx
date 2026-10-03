@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { useSession } from "@/components/app/session-provider";
+import type {
+  IntegrationsResponse,
+  SiteVerificationItem,
+  TelegramStatus,
+  VerifySitesResponse,
+} from "@/lib/types";
 
 interface TabIntegrationsProps {
   onShowToast: (msg: string) => void;
@@ -8,7 +16,6 @@ interface TabIntegrationsProps {
 }
 
 const DEFAULT_SITES = [
-  "careers.airbnb.com",
   "stripe.com/jobs",
   "linear.app/careers",
   "vercel.com/careers",
@@ -20,46 +27,60 @@ export function TabIntegrations({
   onShowToast,
   onRefreshJobs,
 }: TabIntegrationsProps) {
+  const { user } = useSession();
   const [customSites, setCustomSites] = useState<string[]>(DEFAULT_SITES);
   const [newSiteInput, setNewSiteInput] = useState("");
   const [isCrawling, setIsCrawling] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResults, setVerificationResults] = useState<Record<string, SiteVerificationItem>>({});
 
-  // Form states
-  const [telegramToken, setTelegramToken] = useState("7182948192:AAFNk8294...");
-  const [telegramChatId, setTelegramChatId] = useState("892184918");
-  const [outlookClient, setOutlookClient] = useState("enis.korkut@outlook.com");
-  const [outlookSecret, setOutlookSecret] = useState("ms-sec-98124091823");
+  // Telegram integration states
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatus | null>(null);
+  const [telegramToken, setTelegramToken] = useState("");
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [savingTelegram, setSavingTelegram] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
 
+  // Email / OAuth integration states
+  const [integrationsData, setIntegrationsData] = useState<IntegrationsResponse | null>(null);
+
+  const storageKey = `job_hunter_custom_sites:${user?.id || "anon"}`;
+
+  // Load custom sites from user-scoped localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("job_hunter_custom_sites");
+      const saved = localStorage.getItem(storageKey);
       if (saved) {
         setCustomSites(JSON.parse(saved));
+      } else {
+        setCustomSites(DEFAULT_SITES);
       }
-    } catch (e) {}
+    } catch {
+      setCustomSites(DEFAULT_SITES);
+    }
+  }, [storageKey]);
+
+  // Load real Telegram & OAuth integrations status
+  useEffect(() => {
+    api
+      .get<TelegramStatus>("/api/v1/integrations/telegram/status")
+      .then((data) => {
+        setTelegramStatus(data);
+        if (data.chat_id) setTelegramChatId(data.chat_id);
+      })
+      .catch(() => {});
+
+    api
+      .get<IntegrationsResponse>("/api/v1/integrations")
+      .then((data) => setIntegrationsData(data))
+      .catch(() => {});
   }, []);
 
   const saveSitesToStorage = (sites: string[]) => {
     setCustomSites(sites);
     try {
-      localStorage.setItem("job_hunter_custom_sites", JSON.stringify(sites));
-    } catch (e) {}
-  };
-
-  const getCsrfToken = async () => {
-    let match = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("jh_csrf="));
-    if (!match) {
-      try {
-        await fetch("/api/v1/auth/csrf");
-        match = document.cookie
-          .split("; ")
-          .find((row) => row.startsWith("jh_csrf="));
-      } catch (e) {}
-    }
-    return match ? decodeURIComponent(match.split("=")[1]) : "";
+      localStorage.setItem(storageKey, JSON.stringify(sites));
+    } catch {}
   };
 
   const handleAddCustomSite = async () => {
@@ -81,27 +102,14 @@ export function TabIntegrations({
     onShowToast(`'${val}' taranıyor ve ilanlar çekiliyor...`);
 
     try {
-      const csrf = await getCsrfToken();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (csrf) headers["X-CSRF-Token"] = csrf;
-
-      const resp = await fetch("/api/v1/integrations/custom-sites/crawl", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ url: val }),
-      });
-
-      if (resp.ok) {
-        const data = await resp.json();
-        onShowToast(data.message || `'${val}' tarama rotasına başarıyla eklendi.`);
-        onRefreshJobs();
-      } else {
-        onShowToast(`'${val}' tarama rotasına eklendi.`);
-      }
-    } catch (e) {
-      onShowToast(`'${val}' tarama rotasına eklendi.`);
+      const res = await api.post<{ message?: string; job_id?: string }>(
+        "/api/v1/integrations/custom-sites/crawl",
+        { url: val }
+      );
+      onShowToast(res?.message || `'${val}' tarama kuyruğuna eklendi.`);
+      onRefreshJobs();
+    } catch {
+      onShowToast(`'${val}' adresine bağlanılamadı.`);
     } finally {
       setIsCrawling(false);
     }
@@ -113,508 +121,307 @@ export function TabIntegrations({
     onShowToast(`'${siteToRemove}' listeden kaldırıldı.`);
   };
 
-  const handleVerifySites = async () => {
+  const handleVerifyAll = async () => {
+    if (isVerifying || customSites.length === 0) return;
     setIsVerifying(true);
-    onShowToast("Kaynaklar ve ATS ağları taranıyor...");
+    onShowToast("Kayıtlı kariyer sayfaları doğrulanıyor...");
+
     try {
-      const csrf = await getCsrfToken();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (csrf) headers["X-CSRF-Token"] = csrf;
+      // Bounded to 20 sites maximum
+      const sitesToCheck = customSites.slice(0, 20);
+      const res = await api.post<VerifySitesResponse>(
+        "/api/v1/integrations/custom-sites/verify",
+        { sites: sitesToCheck }
+      );
 
-      const resp = await fetch("/api/v1/integrations/custom-sites/verify", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ sites: customSites }),
-      });
-
-      if (resp.ok) {
-        const data = await resp.json();
-        onShowToast(
-          `Tarayıcı Doğrulandı: ${data.active_sites} / ${data.total_checked} özel kariyer sitesi ve 4 ATS ağı çevrimiçi (200 OK).`
-        );
-        return;
+      const mapping: Record<string, SiteVerificationItem> = {};
+      for (const item of res.results) {
+        mapping[item.site] = item;
       }
-    } catch (e) {} finally {
+      setVerificationResults(mapping);
+      onShowToast(`${res.active_sites}/${res.total_checked} kaynak aktif ve erişilebilir.`);
+    } catch {
+      onShowToast("Doğrulama işlemi sırasında hata oluştu.");
+    } finally {
       setIsVerifying(false);
     }
-    onShowToast(
-      `Tarayıcı Doğrulandı: ${customSites.length} özel kariyer sitesi ve 4 ATS ağı çevrimiçi (200 OK).`
-    );
+  };
+
+  const handleSaveTelegram = async () => {
+    if (!telegramToken.trim()) {
+      onShowToast("Lütfen geçerli bir Telegram Bot Token girin.");
+      return;
+    }
+    setSavingTelegram(true);
+    try {
+      const res = await api.post<TelegramStatus>("/api/v1/integrations/telegram", {
+        bot_token: telegramToken.trim(),
+        chat_id: telegramChatId.trim() || undefined,
+      });
+      setTelegramStatus(res);
+      setTelegramToken("");
+      onShowToast("Telegram bot entegrasyonu başarıyla kaydedildi.");
+    } catch {
+      onShowToast("Telegram yapılandırması kaydedilemedi.");
+    } finally {
+      setSavingTelegram(false);
+    }
   };
 
   const handleTestTelegram = async () => {
-    onShowToast("Telegram VIP bağlantısı test ediliyor...");
+    setTestingTelegram(true);
     try {
-      const csrf = await getCsrfToken();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (csrf) headers["X-CSRF-Token"] = csrf;
+      await api.post("/api/v1/integrations/telegram/test");
+      onShowToast("Telegram test bildirimi başarıyla iletildi.");
+    } catch {
+      onShowToast("Test mesajı gönderilemedi. Token ve Chat ID'yi kontrol edin.");
+    } finally {
+      setTestingTelegram(false);
+    }
+  };
 
-      const resp = await fetch("/api/v1/integrations/telegram/test", {
-        method: "POST",
-        headers,
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        onShowToast(data.message || "Telegram test mesajı iletildi.");
-        return;
+  const handleDetectTelegramChat = async () => {
+    try {
+      const res = await api.post<{ chat_id?: string; username?: string }>(
+        "/api/v1/integrations/telegram/detect-chat"
+      );
+      if (res.chat_id) {
+        setTelegramChatId(res.chat_id);
+        onShowToast(`Chat ID tespit edildi: ${res.chat_id}`);
+      } else {
+        onShowToast("Yeni mesaj bulunamadı. Lütfen botunuza Telegram'da /start yazın.");
       }
-    } catch (e) {}
-    onShowToast("Telegram testi tamamlandı (200 OK).");
+    } catch {
+      onShowToast("Chat ID tespiti başarısız oldu.");
+    }
   };
 
   return (
     <div id="tab-integrations" className="tab-pane space-y-6">
-      {/* Top Overview Banner */}
-      <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Custom Sites / ATS Web Crawler */}
+      <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-white/15">
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_#ffffff]" />
               <h2 className="text-xl font-bold font-mono text-white tracking-wide">
-                SİSTEM ENTEGRASYONLARI &amp; API ANAHTARLARI
+                ÖZEL WEB &amp; ATS TARAMA MOTORU
               </h2>
             </div>
             <p className="text-xs text-white/50 font-mono mt-1">
-              Tüm anahtarlar yerel şifrelenmiş bellekte (Client Vault) saklanır ve doğrudan ilgili servislerle iletişim kurar.
+              Kariyer sayfalarını ve ATS portallarını (Greenhouse, Lever, Ashby, Workday) doğrudan tarar.
             </p>
           </div>
+
           <button
             type="button"
-            onClick={() => onShowToast("Tüm anahtarlar yerel kasaya kaydedildi.")}
-            className="silver-btn lux-press px-5 py-2.5 rounded-xl text-xs font-mono uppercase tracking-wider flex items-center gap-2 cursor-pointer"
+            onClick={handleVerifyAll}
+            disabled={isVerifying}
+            className="lux-press px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold flex items-center gap-2 self-start md:self-auto disabled:opacity-50"
           >
-            <svg
-              className="w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <polyline points="17 21 17 13 7 13 7 21" />
-              <polyline points="7 3 7 8 15 8" />
-            </svg>
-            <span>TÜM ANAHTARLARI KAYDET</span>
+            <span>{isVerifying ? "Doğrulanıyor..." : "Kaynakları Doğrula (Max 4 Eşzamanlı)"}</span>
           </button>
+        </div>
+
+        {/* Input Bar */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            value={newSiteInput}
+            onChange={(e) => setNewSiteInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddCustomSite()}
+            placeholder="örnek: jobs.lever.co/anthropic veya stripe.com/jobs"
+            className="flex-1 bg-[#040405] border border-white/20 rounded-xl px-4 py-3 text-xs font-mono text-white placeholder-white/30 focus:border-white focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={handleAddCustomSite}
+            disabled={isCrawling}
+            className="silver-btn lux-press px-6 py-3 rounded-xl text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 text-white disabled:opacity-50"
+          >
+            <span>{isCrawling ? "Taranıyor..." : "Siteyi Ekle & Tara"}</span>
+          </button>
+        </div>
+
+        {/* Sites List */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+          {customSites.map((site) => {
+            const vResult = verificationResults[site];
+            return (
+              <div
+                key={site}
+                className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/25 transition-all font-mono text-xs"
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="text-white font-semibold truncate">{site}</div>
+                  <div className="text-[10px] text-white/40 mt-0.5">
+                    {vResult ? (
+                      <span className={vResult.status === "ok" ? "text-emerald-400" : "text-amber-400"}>
+                        {vResult.status === "ok" ? `Aktif (${vResult.jobs_found} ilan)` : "Erişim hatası"}
+                      </span>
+                    ) : (
+                      "Kayıtlı Tarama Rotası"
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSite(site)}
+                  className="text-white/40 hover:text-white p-1 text-sm font-bold"
+                  title="Listeden Çıkar"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 1. Telegram VIP Bildirim Botu */}
-        <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 font-mono">
+      {/* Telegram VIP Notifications */}
+      <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-6">
+        <div className="flex items-center justify-between pb-6 border-b border-white/15">
+          <div>
             <div className="flex items-center gap-2">
-              <svg
-                className="w-4 h-4 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="m22 2-7 20-4-9-9-4Z" />
-                <path d="M22 2 11 13" />
-              </svg>
-              <span className="text-sm font-bold text-white uppercase">
-                TELEGRAM VIP BİLDİRİM BOTU
-              </span>
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  telegramStatus?.connected ? "bg-emerald-400" : "bg-zinc-600"
+                }`}
+              />
+              <h2 className="text-xl font-bold font-mono text-white tracking-wide">
+                TELEGRAM VIP BİLDİRİM KONSOLU
+              </h2>
             </div>
-            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              BAĞLI // AKTİF
-            </span>
+            <p className="text-xs text-white/50 font-mono mt-1">
+              Yüksek uyumlu iş fırsatlarını anında Telegram kanalınıza veya özel sohbetinize aktarır.
+            </p>
           </div>
 
-          {/* Guide Accordion */}
-          <details className="group rounded-2xl bg-[#040405] border border-white/10 overflow-hidden transition-all">
-            <summary className="flex items-center justify-between p-4 cursor-pointer select-none text-xs font-mono text-white font-bold uppercase tracking-wider hover:bg-white/[0.04] transition-colors list-none [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center gap-2">
-                <svg
-                  className="w-3.5 h-3.5 text-white/70"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="m22 2-7 20-4-9-9-4Z" />
-                  <path d="M22 2 11 13" />
-                </svg>
-                <span>Kurulum ve Token Alma Rehberi (Adım Adım)</span>
-                <span className="text-[10px] text-white/50 px-2 py-0.5 rounded bg-white/5 border border-white/10 font-normal">
-                  ~3 DK
-                </span>
+          <div className="font-mono text-xs">
+            {telegramStatus?.connected ? (
+              <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold">
+                BAĞLI ({telegramStatus.bot_username || "Aktif Bot"})
               </span>
-              <svg
-                className="w-4 h-4 text-white/50 group-open:rotate-180 transition-transform duration-200 shrink-0 ml-2"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </summary>
-
-            <div className="p-4 pt-1 space-y-4 text-xs font-sans text-white/80 border-t border-white/5">
-              <div className="flex items-center justify-between font-mono text-[11px] pb-2 border-b border-white/5">
-                <span className="text-white/50">Önkoşul: Aktif Telegram Hesabı</span>
-                <a
-                  href="https://t.me/BotFather"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
-                >
-                  <span>@BotFather&apos;ı Aç</span>
-                  <svg
-                    className="w-3 h-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                </a>
-              </div>
-
-              <div className="space-y-3 font-sans">
-                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                  <div className="flex items-center gap-2 text-white font-semibold font-mono text-[11px]">
-                    <span className="w-5 h-5 rounded-full bg-white/10 text-white flex items-center justify-center text-[10px] font-bold">
-                      1
-                    </span>
-                    @BotFather ile Yeni Bot Oluşturun
-                  </div>
-                  <p className="text-white/70 text-[11px] leading-relaxed pl-7">
-                    Telegram&apos;da <strong>@BotFather</strong> ile sohbet başlatın, <code className="text-white bg-white/10 px-1 py-0.5 rounded font-mono text-[10px]">/newbot</code> komutunu gönderin.
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                  <div className="flex items-center gap-2 text-white font-semibold font-mono text-[11px]">
-                    <span className="w-5 h-5 rounded-full bg-white/10 text-white flex items-center justify-center text-[10px] font-bold">
-                      2
-                    </span>
-                    Bot Token&apos;ı Kopyalayın ve Forma Ekleyin
-                  </div>
-                  <p className="text-white/70 text-[11px] leading-relaxed pl-7">
-                    BotFather&apos;ın size verdiği HTTP API belirtecini kopyalayıp aşağıdaki alana yapıştırın.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <div className="space-y-4 font-mono text-xs">
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Telegram Bot Token (HTTP API)
-              </label>
-              <input
-                type="password"
-                value={telegramToken}
-                onChange={(e) => setTelegramToken(e.target.value)}
-                className="w-full bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono focus:border-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Telegram VIP Kanal / Sohbet ID
-              </label>
-              <input
-                type="text"
-                value={telegramChatId}
-                onChange={(e) => setTelegramChatId(e.target.value)}
-                className="w-full bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono focus:border-white focus:outline-none"
-              />
-            </div>
-
-            <div className="pt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleTestTelegram}
-                className="lux-press flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-semibold cursor-pointer"
-              >
-                Telegram Bağlantısını Test Et
-              </button>
-            </div>
+            ) : (
+              <span className="px-3 py-1 rounded-full bg-white/5 text-white/50 border border-white/10">
+                BAĞLI DEĞİL
+              </span>
+            )}
           </div>
         </div>
 
-        {/* 2. Web ATS & Özel Kariyer Siteleri Entegrasyonu */}
-        <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 font-mono">
-            <div className="flex items-center gap-2">
-              <svg
-                className="w-4 h-4 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="m4.93 4.93 4.24 4.24" />
-                <path d="m14.83 9.17 4.24-4.24" />
-                <path d="m14.83 14.83 4.24 4.24" />
-                <path d="m9.17 14.83-4.24 4.24" />
-              </svg>
-              <span className="text-sm font-bold text-white uppercase">
-                ÖZEL SİTE VE ATS TARAMA MOTORU
-              </span>
-            </div>
-            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              TARAYICI AKTİF
-            </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+          <div>
+            <label className="block text-[10px] text-white/50 uppercase mb-1">
+              Telegram Bot Token (BotFather)
+            </label>
+            <input
+              type="password"
+              value={telegramToken}
+              onChange={(e) => setTelegramToken(e.target.value)}
+              placeholder={telegramStatus?.connected ? "•••••••••••••••••••• (Gizlendi)" : "Token girin"}
+              className="w-full bg-[#040405] border border-white/20 rounded-xl px-4 py-3 text-xs text-white focus:border-white focus:outline-none"
+            />
           </div>
 
-          {/* Guide Accordion */}
-          <details className="group rounded-2xl bg-[#040405] border border-white/10 overflow-hidden transition-all">
-            <summary className="flex items-center justify-between p-4 cursor-pointer select-none text-xs font-mono text-white font-bold uppercase tracking-wider hover:bg-white/[0.04] transition-colors list-none [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center gap-2">
-                <svg
-                  className="w-3.5 h-3.5 text-white/70"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="m10 15 5-3-5-3v6Z" />
-                </svg>
-                <span>Kariyer Siteleri ve ATS Tarama Rehberi</span>
-                <span className="text-[10px] text-white/50 px-2 py-0.5 rounded bg-white/5 border border-white/10 font-normal">
-                  BİLGİ
-                </span>
-              </span>
-              <svg
-                className="w-4 h-4 text-white/50 group-open:rotate-180 transition-transform duration-200 shrink-0 ml-2"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </summary>
-
-            <div className="p-4 pt-1 space-y-3 text-xs font-sans text-white/80 border-t border-white/5">
-              <div className="space-y-1.5 text-[11px] leading-relaxed text-white/70">
-                <p>
-                  <strong>Özel Şirket Kariyer Sayfaları:</strong> Takip etmek istediğiniz teknoloji şirketlerinin kariyer sayfalarını (örn: <code className="text-white font-mono bg-white/10 px-1 py-0.5 rounded">careers.airbnb.com</code>, <code className="text-white font-mono bg-white/10 px-1 py-0.5 rounded">stripe.com/jobs</code>) ekleyerek otomatik tarama rotasına dahil edebilirsiniz.
-                </p>
-                <p>
-                  <strong>Doğrudan ATS Entegrasyonları:</strong> Greenhouse, Lever, Ashby ve Workday üzerinden yayınlanan resmi ilanların tam metni ve başvuru linkleri anında aday havuzuna çekilir.
-                </p>
-              </div>
-            </div>
-          </details>
-
-          <div className="space-y-4 font-mono text-xs">
-            {/* Custom Sites Input */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-white/60 uppercase text-[11px]">
-                  Taranacak Özel Kariyer Siteleri &amp; Şirketler
-                </label>
-                <span className="text-[10px] text-white/40">
-                  {customSites.length} Kaynak Tanımlı
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newSiteInput}
-                  onChange={(e) => setNewSiteInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddCustomSite();
-                    }
-                  }}
-                  placeholder="Örn: stripe.com/jobs, careers.airbnb.com, linear.app..."
-                  className="flex-1 bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:border-white focus:outline-none placeholder-white/30"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddCustomSite}
-                  disabled={isCrawling}
-                  className="lux-press px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-xs font-mono font-bold uppercase transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {isCrawling ? "..." : "EKLE"}
-                </button>
-              </div>
-
-              {/* Removable Badges Container */}
-              <div className="flex flex-wrap gap-1.5 pt-2.5">
-                {customSites.map((site) => (
-                  <span
-                    key={site}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-white/90 text-xs font-mono group hover:border-white/30 transition-all"
-                  >
-                    <span>{site}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSite(site)}
-                      className="text-white/40 hover:text-rose-400 font-bold transition-colors cursor-pointer"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* ATS Networks Checkboxes */}
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Taranacak Kurumsal ATS Ağları
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] text-white/50 uppercase">
+                Telegram Chat ID
               </label>
-              <div className="grid grid-cols-2 gap-2 text-[11px] text-white/80 pt-1">
-                <label className="flex items-center gap-2 bg-[#040405] p-2 rounded-lg border border-white/10 cursor-pointer hover:border-white/30 transition-all">
-                  <input type="checkbox" defaultChecked className="accent-white" /> Greenhouse ATS
-                </label>
-                <label className="flex items-center gap-2 bg-[#040405] p-2 rounded-lg border border-white/10 cursor-pointer hover:border-white/30 transition-all">
-                  <input type="checkbox" defaultChecked className="accent-white" /> Lever.co
-                </label>
-                <label className="flex items-center gap-2 bg-[#040405] p-2 rounded-lg border border-white/10 cursor-pointer hover:border-white/30 transition-all">
-                  <input type="checkbox" defaultChecked className="accent-white" /> Ashby HQ
-                </label>
-                <label className="flex items-center gap-2 bg-[#040405] p-2 rounded-lg border border-white/10 cursor-pointer hover:border-white/30 transition-all">
-                  <input type="checkbox" defaultChecked className="accent-white" /> Workday Tech
-                </label>
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleVerifySites}
-                disabled={isVerifying}
-                className="lux-press flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-semibold cursor-pointer disabled:opacity-50"
+                onClick={handleDetectTelegramChat}
+                className="text-emerald-400 hover:underline text-[10px] cursor-pointer"
               >
-                {isVerifying ? "Doğrulanıyor..." : "Kaynakları Doğrula & Taramayı Başlat"}
+                Chat ID Tespit Et ↺
               </button>
             </div>
+            <input
+              type="text"
+              value={telegramChatId}
+              onChange={(e) => setTelegramChatId(e.target.value)}
+              placeholder="Örn: 123456789 veya -100123456789"
+              className="w-full bg-[#040405] border border-white/20 rounded-xl px-4 py-3 text-xs text-white focus:border-white focus:outline-none"
+            />
           </div>
         </div>
 
-        {/* 3. Outlook / Hotmail Mailbox Integration */}
-        <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 font-mono">
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleSaveTelegram}
+            disabled={savingTelegram}
+            className="silver-btn lux-press px-6 py-2.5 rounded-xl text-xs font-mono uppercase tracking-wider text-white disabled:opacity-50"
+          >
+            <span>{savingTelegram ? "Kaydediliyor..." : "Yapılandırmayı Kaydet"}</span>
+          </button>
+
+          {telegramStatus?.connected && (
+            <button
+              type="button"
+              onClick={handleTestTelegram}
+              disabled={testingTelegram}
+              className="lux-press px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold disabled:opacity-50"
+            >
+              <span>{testingTelegram ? "Gönderiliyor..." : "Test Bildirimi Gönder"}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Email & OAuth Accounts */}
+      <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-6">
+        <div className="flex items-center justify-between pb-6 border-b border-white/15">
+          <div>
             <div className="flex items-center gap-2">
-              <svg
-                className="w-4 h-4 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <rect width="20" height="16" x="2" y="4" rx="2" />
-                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-              </svg>
-              <span className="text-sm font-bold text-white uppercase">
-                MICROSOFT OUTLOOK / HOTMAIL
-              </span>
+              <span className="w-2.5 h-2.5 rounded-full bg-white" />
+              <h2 className="text-xl font-bold font-mono text-white tracking-wide">
+                GELEN E-POSTA &amp; OAUTH İŞ ALARMLARI
+              </h2>
             </div>
-            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              BAĞLI // AKTİF
-            </span>
-          </div>
-
-          <div className="space-y-4 font-mono text-xs">
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Outlook E-Posta / Client ID
-              </label>
-              <input
-                type="text"
-                value={outlookClient}
-                onChange={(e) => setOutlookClient(e.target.value)}
-                className="w-full bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono focus:border-white focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Client Secret / Parola
-              </label>
-              <input
-                type="password"
-                value={outlookSecret}
-                onChange={(e) => setOutlookSecret(e.target.value)}
-                className="w-full bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono focus:border-white focus:outline-none"
-              />
-            </div>
-
-            <div className="pt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onShowToast("Outlook bağlantısı doğrulandı (200 OK).")}
-                className="lux-press flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-semibold cursor-pointer"
-              >
-                Outlook Bağlantısını Test Et
-              </button>
-            </div>
+            <p className="text-xs text-white/50 font-mono mt-1">
+              LinkedIn iş uyarılarını ve kariyer bültenlerini otomatik ayrıştıran güvenli OAuth bağlantıları.
+            </p>
           </div>
         </div>
 
-        {/* 4. Google Gmail Integration */}
-        <div className="carbon-card rounded-3xl p-6 md:p-8 space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 font-mono">
-            <div className="flex items-center gap-2">
-              <svg
-                className="w-4 h-4 text-white"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                <polyline points="22,6 12,13 2,6" />
-              </svg>
-              <span className="text-sm font-bold text-white uppercase">GOOGLE GMAIL OAUTH</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Gmail */}
+          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-white uppercase">Google / Gmail</span>
+              <span className="text-[10px] text-white/50">Resmi Google OAuth</span>
             </div>
-            <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              BAĞLI // AKTİF
-            </span>
+            <p className="text-white/60 text-[11px] font-sans">
+              Google Workspace veya kişisel Gmail hesabınızdaki LinkedIn iş bildirimlerini tarar.
+            </p>
+            <div className="pt-2">
+              <a
+                href="/api/v1/oauth/google/start"
+                className="silver-btn lux-press inline-block px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider text-white"
+              >
+                Gmail Hesabını Yetkilendir
+              </a>
+            </div>
           </div>
 
-          <div className="space-y-4 font-mono text-xs">
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Google Client ID
-              </label>
-              <input
-                type="text"
-                defaultValue="98217348912-apps.googleusercontent.com"
-                className="w-full bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono focus:border-white focus:outline-none"
-              />
+          {/* Microsoft Outlook */}
+          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-white uppercase">Microsoft Outlook</span>
+              <span className="text-[10px] text-white/50">Microsoft Graph OAuth</span>
             </div>
-
-            <div>
-              <label className="block text-white/60 mb-1.5 uppercase text-[11px]">
-                Client Secret
-              </label>
-              <input
-                type="password"
-                defaultValue="GOCSPX-9812498127391823"
-                className="w-full bg-[#040405] border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono focus:border-white focus:outline-none"
-              />
-            </div>
-
-            <div className="pt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onShowToast("Google Gmail API bağlantısı doğrulandı (200 OK).")}
-                className="lux-press flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-mono font-semibold cursor-pointer"
+            <p className="text-white/60 text-[11px] font-sans">
+              Outlook / Hotmail posta kutusundaki kariyer uyarılarını güvenli Graph Delta ile çeker.
+            </p>
+            <div className="pt-2">
+              <a
+                href="/api/v1/oauth/microsoft/start"
+                className="silver-btn lux-press inline-block px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider text-white"
               >
-                Gmail Bağlantısını Test Et
-              </button>
+                Outlook Hesabını Yetkilendir
+              </a>
             </div>
           </div>
         </div>

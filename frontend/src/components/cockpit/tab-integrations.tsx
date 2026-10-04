@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError } from "@/lib/api";
 import { useSession } from "@/components/app/session-provider";
+import { formatDateTime } from "@/lib/format";
 import type {
+  AccountTestResponse,
+  ConnectResponse,
   IntegrationsResponse,
+  MailAccount,
   SiteVerificationItem,
+  TelegramDetectResponse,
   TelegramStatus,
   VerifySitesResponse,
 } from "@/lib/types";
@@ -28,6 +33,11 @@ export function TabIntegrations({
   onRefreshJobs,
 }: TabIntegrationsProps) {
   const { user } = useSession();
+  const onShowToastRef = useRef(onShowToast);
+  useEffect(() => {
+    onShowToastRef.current = onShowToast;
+  }, [onShowToast]);
+
   const [customSites, setCustomSites] = useState<string[]>(DEFAULT_SITES);
   const [newSiteInput, setNewSiteInput] = useState("");
   const [isCrawling, setIsCrawling] = useState(false);
@@ -44,11 +54,21 @@ export function TabIntegrations({
   // Email / OAuth integration states
   const [integrationsData, setIntegrationsData] = useState<IntegrationsResponse | null>(null);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+  const [testingAccountId, setTestingAccountId] = useState<string | null>(null);
+  const [reconnectingAccountId, setReconnectingAccountId] = useState<string | null>(null);
+  const [disconnectingAccountId, setDisconnectingAccountId] = useState<string | null>(null);
+
+  const refetchIntegrations = useCallback(async () => {
+    try {
+      const data = await api.get<IntegrationsResponse>("/api/v1/integrations");
+      setIntegrationsData(data);
+    } catch {}
+  }, []);
 
   const handleConnectMail = async (provider: "gmail" | "outlook") => {
     setConnectingProvider(provider);
     try {
-      const res = await api.post<{ authorization_url: string }>(
+      const res = await api.post<ConnectResponse>(
         `/api/v1/integrations/${provider}/connect`
       );
       if (res?.authorization_url) {
@@ -57,9 +77,80 @@ export function TabIntegrations({
         onShowToast("Yetkilendirme bağlantısı alınamadı.");
         setConnectingProvider(null);
       }
-    } catch {
-      onShowToast("Bağlantı başlatılamadı. Sistem yapılandırmasını kontrol edin.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        onShowToast(err.message);
+      } else {
+        onShowToast("Bağlantı başlatılamadı. Sistem yapılandırmasını kontrol edin.");
+      }
       setConnectingProvider(null);
+    }
+  };
+
+  const handleTestAccount = async (account: MailAccount) => {
+    setTestingAccountId(account.id);
+    try {
+      const res = await api.post<AccountTestResponse>(
+        `/api/v1/integrations/accounts/${account.id}/test`
+      );
+      if (res.ok) {
+        const isOutlook = account.provider === "outlook";
+        onShowToast(
+          isOutlook
+            ? "Outlook bağlantısı doğrulandı."
+            : "Gmail bağlantısı doğrulandı."
+        );
+      } else {
+        onShowToast(res.message || "Bağlantı doğrulanamadı.");
+      }
+      await refetchIntegrations();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        onShowToast(err.message);
+      } else {
+        onShowToast("Bağlantı test edilemedi.");
+      }
+    } finally {
+      setTestingAccountId(null);
+    }
+  };
+
+  const handleReconnectAccount = async (account: MailAccount) => {
+    setReconnectingAccountId(account.id);
+    try {
+      const res = await api.post<ConnectResponse>(
+        `/api/v1/integrations/accounts/${account.id}/reconnect`
+      );
+      if (res?.authorization_url) {
+        window.location.assign(res.authorization_url);
+      } else {
+        onShowToast("Yetkilendirme bağlantısı alınamadı.");
+        setReconnectingAccountId(null);
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        onShowToast(err.message);
+      } else {
+        onShowToast("Yeniden yetkilendirme başlatılamadı.");
+      }
+      setReconnectingAccountId(null);
+    }
+  };
+
+  const handleDisconnectAccount = async (account: MailAccount) => {
+    setDisconnectingAccountId(account.id);
+    try {
+      await api.delete(`/api/v1/integrations/accounts/${account.id}`);
+      onShowToast("Hesap bağlantısı kaldırıldı.");
+      await refetchIntegrations();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        onShowToast(err.message);
+      } else {
+        onShowToast("Bağlantı kaldırılamadı.");
+      }
+    } finally {
+      setDisconnectingAccountId(null);
     }
   };
 
@@ -67,6 +158,10 @@ export function TabIntegrations({
   const outlookIntegration = integrationsData?.integrations.find((i) => i.provider === "outlook");
   const isGmailConfigured = gmailIntegration?.configured ?? false;
   const isOutlookConfigured = outlookIntegration?.configured ?? false;
+  const gmailConnectedAccounts =
+    gmailIntegration?.accounts?.filter((a) => a.status !== "disconnected") ?? [];
+  const outlookConnectedAccounts =
+    outlookIntegration?.accounts?.filter((a) => a.status !== "disconnected") ?? [];
 
   const storageKey = `job_hunter_custom_sites:${user?.id || "anon"}`;
 
@@ -84,6 +179,53 @@ export function TabIntegrations({
     }
   }, [storageKey]);
 
+  // Handle OAuth redirect callbacks
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get("oauth");
+    if (!oauth) return;
+
+    const provider = params.get("provider") ?? "";
+    const reason = params.get("reason") ?? "";
+    const isOutlook = provider.toLowerCase() === "outlook";
+    const isGmail = provider.toLowerCase() === "gmail";
+
+    if (oauth === "success") {
+      const msg = isOutlook
+        ? "Outlook hesabı başarıyla bağlandı."
+        : isGmail
+          ? "Gmail hesabı başarıyla bağlandı."
+          : "E-posta hesabı başarıyla bağlandı.";
+      onShowToastRef.current(msg);
+      refetchIntegrations();
+    } else if (oauth === "error") {
+      const errorMap: Record<string, string> = {
+        access_denied: "Kullanıcı bağlantı iznini vermedi.",
+        invalid_client: "Outlook/Gmail sistem yapılandırmasında sorun var. Yöneticiye bildirin.",
+        redirect_uri_mismatch: "Sistem OAuth yönlendirme ayarı hatalı. Yöneticiye bildirin.",
+        not_a_test_user: "Bu Google hesabı şu anda Job Finder test kullanıcıları listesinde değil.",
+        oauth_not_configured: "Yönetici tarafından henüz yapılandırılmamış.",
+        state_missing: "Yetkilendirme yanıtı eksik veya geçersiz; akışı yeniden başlatın.",
+        session_missing: "Oturum bulunamadı; lütfen yeniden giriş yapın.",
+        forbidden: "Bu yetkilendirme isteği başka bir oturuma ait; akışı yeniden başlatın.",
+        missing_code: "Sağlayıcı yetkilendirme kodu göndermedi.",
+        rejected: "Yetkilendirme isteği reddedildi.",
+        provider_error: "Sağlayıcı beklenmeyen bir hata döndürdü.",
+      };
+      const message =
+        errorMap[reason] ||
+        "Bağlantı tamamlanamadı. Sistem yöneticisine bildirin.";
+      onShowToastRef.current(message);
+    }
+
+    const url = new URL(window.location.href);
+    ["oauth", "reason", "detail", "account", "created", "provider"].forEach((key) =>
+      url.searchParams.delete(key),
+    );
+    window.history.replaceState({}, "", url.toString());
+  }, [refetchIntegrations]);
+
   // Load real Telegram & OAuth integrations status
   useEffect(() => {
     api
@@ -94,11 +236,8 @@ export function TabIntegrations({
       })
       .catch(() => {});
 
-    api
-      .get<IntegrationsResponse>("/api/v1/integrations")
-      .then((data) => setIntegrationsData(data))
-      .catch(() => {});
-  }, []);
+    refetchIntegrations();
+  }, [refetchIntegrations]);
 
   const saveSitesToStorage = (sites: string[]) => {
     setCustomSites(sites);
@@ -178,7 +317,7 @@ export function TabIntegrations({
     }
     setSavingTelegram(true);
     try {
-      const res = await api.post<TelegramStatus>("/api/v1/integrations/telegram", {
+      const res = await api.post<TelegramStatus>("/api/v1/integrations/telegram/config", {
         bot_token: telegramToken.trim(),
         chat_id: telegramChatId.trim() || undefined,
       });
@@ -206,14 +345,16 @@ export function TabIntegrations({
 
   const handleDetectTelegramChat = async () => {
     try {
-      const res = await api.post<{ chat_id?: string; username?: string }>(
-        "/api/v1/integrations/telegram/detect-chat"
+      const payload = telegramToken.trim() ? { bot_token: telegramToken.trim() } : undefined;
+      const res = await api.post<TelegramDetectResponse>(
+        "/api/v1/integrations/telegram/detect-chat",
+        payload,
       );
-      if (res.chat_id) {
-        setTelegramChatId(res.chat_id);
-        onShowToast(`Chat ID tespit edildi: ${res.chat_id}`);
+      if (res.suggested_chat_id) {
+        setTelegramChatId(res.suggested_chat_id);
+        onShowToast(`Chat ID tespit edildi: ${res.suggested_chat_id}`);
       } else {
-        onShowToast("Yeni mesaj bulunamadı. Lütfen botunuza Telegram'da /start yazın.");
+        onShowToast(res.message || "Yeni mesaj bulunamadı. Lütfen botunuza Telegram'da /start yazın.");
       }
     } catch {
       onShowToast("Chat ID tespiti başarısız oldu.");
@@ -412,7 +553,10 @@ export function TabIntegrations({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Gmail */}
-          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3 font-mono text-xs">
+          <div
+            data-testid="integration-card-gmail"
+            className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4 font-mono text-xs"
+          >
             <div className="flex items-center justify-between">
               <span className="font-bold text-white uppercase">GOOGLE / GMAIL</span>
               <span className="text-[10px] text-white/50">Resmi Google OAuth</span>
@@ -425,6 +569,66 @@ export function TabIntegrations({
               <p>Yalnızca posta okuma izni istenir.</p>
               <p>Job Finder yalnızca iş bildirimlerini bulmak için e-posta okuma izni kullanır.</p>
             </div>
+
+            {/* Connected Accounts */}
+            {gmailConnectedAccounts.length > 0 && (
+              <div className="space-y-3 pt-2 border-t border-white/10">
+                <span className="text-[10px] text-white/40 uppercase tracking-wider block">
+                  Bağlı Hesaplar ({gmailConnectedAccounts.length})
+                </span>
+                {gmailConnectedAccounts.map((account) => (
+                  <div
+                    key={account.id}
+                    data-testid={`account-card-${account.id}`}
+                    className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-white font-semibold font-mono text-xs">
+                        {account.email_address}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold font-mono text-[10px]">
+                        BAĞLI
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1 text-[10px] text-white/50 font-mono">
+                      <span>Yetki: Yalnızca posta okuma</span>
+                      {account.last_synced_at && (
+                        <span>Son senkronizasyon: {formatDateTime(account.last_synced_at)}</span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleTestAccount(account)}
+                        disabled={testingAccountId === account.id}
+                        className="lux-press px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold disabled:opacity-50"
+                      >
+                        {testingAccountId === account.id ? "Test Ediliyor..." : "Bağlantıyı Test Et"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReconnectAccount(account)}
+                        disabled={reconnectingAccountId === account.id}
+                        className="lux-press px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold disabled:opacity-50"
+                      >
+                        {reconnectingAccountId === account.id ? "Yönlendiriliyor..." : "Yeniden Yetkilendir"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDisconnectAccount(account)}
+                        disabled={disconnectingAccountId === account.id}
+                        className="lux-press px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 font-mono text-xs font-bold disabled:opacity-50"
+                      >
+                        {disconnectingAccountId === account.id ? "Kaldırılıyor..." : "Bağlantıyı Kaldır"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="pt-2">
               <button
                 type="button"
@@ -436,14 +640,17 @@ export function TabIntegrations({
               </button>
               {!isGmailConfigured && (
                 <p className="text-[10px] text-amber-400 mt-1.5 font-sans">
-                  Yönetici tarafından yapılandırılmamış.
+                  Yönetici tarafından henüz yapılandırılmamış.
                 </p>
               )}
             </div>
           </div>
 
           {/* Microsoft Outlook */}
-          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3 font-mono text-xs">
+          <div
+            data-testid="integration-card-outlook"
+            className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4 font-mono text-xs"
+          >
             <div className="flex items-center justify-between">
               <span className="font-bold text-white uppercase">OUTLOOK / HOTMAIL</span>
               <span className="text-[10px] text-white/50">Microsoft Graph OAuth</span>
@@ -455,6 +662,66 @@ export function TabIntegrations({
               <p>Microsoft parolanız Job Finder ile paylaşılmaz.</p>
               <p>Yalnızca posta okuma izni istenir.</p>
             </div>
+
+            {/* Connected Accounts */}
+            {outlookConnectedAccounts.length > 0 && (
+              <div className="space-y-3 pt-2 border-t border-white/10">
+                <span className="text-[10px] text-white/40 uppercase tracking-wider block">
+                  Bağlı Hesaplar ({outlookConnectedAccounts.length})
+                </span>
+                {outlookConnectedAccounts.map((account) => (
+                  <div
+                    key={account.id}
+                    data-testid={`account-card-${account.id}`}
+                    className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-white font-semibold font-mono text-xs">
+                        {account.email_address}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold font-mono text-[10px]">
+                        BAĞLI
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1 text-[10px] text-white/50 font-mono">
+                      <span>Yetki: Yalnızca posta okuma</span>
+                      {account.last_synced_at && (
+                        <span>Son senkronizasyon: {formatDateTime(account.last_synced_at)}</span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleTestAccount(account)}
+                        disabled={testingAccountId === account.id}
+                        className="lux-press px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold disabled:opacity-50"
+                      >
+                        {testingAccountId === account.id ? "Test Ediliyor..." : "Bağlantıyı Test Et"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReconnectAccount(account)}
+                        disabled={reconnectingAccountId === account.id}
+                        className="lux-press px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold disabled:opacity-50"
+                      >
+                        {reconnectingAccountId === account.id ? "Yönlendiriliyor..." : "Yeniden Yetkilendir"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDisconnectAccount(account)}
+                        disabled={disconnectingAccountId === account.id}
+                        className="lux-press px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 font-mono text-xs font-bold disabled:opacity-50"
+                      >
+                        {disconnectingAccountId === account.id ? "Kaldırılıyor..." : "Bağlantıyı Kaldır"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="pt-2">
               <button
                 type="button"
@@ -466,7 +733,7 @@ export function TabIntegrations({
               </button>
               {!isOutlookConfigured && (
                 <p className="text-[10px] text-amber-400 mt-1.5 font-sans">
-                  Yönetici tarafından yapılandırılmamış.
+                  Yönetici tarafından henüz yapılandırılmamış.
                 </p>
               )}
             </div>

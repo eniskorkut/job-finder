@@ -76,7 +76,7 @@ def _client_read(service: OAuthClientService, user, provider: str) -> OAuthClien
     )
 
 
-@router.put("/{provider}/client", response_model=OAuthClientRead)
+@router.put("/{provider}/client", response_model=OAuthClientRead, deprecated=True, include_in_schema=False)
 def save_oauth_client(
     provider: Provider,
     payload: OAuthClientSaveRequest,
@@ -95,7 +95,7 @@ def save_oauth_client(
     return _client_read(service, user, provider.value)
 
 
-@router.delete("/{provider}/client", response_model=MessageResponse)
+@router.delete("/{provider}/client", response_model=MessageResponse, deprecated=True, include_in_schema=False)
 def delete_oauth_client(
     provider: Provider, user: CurrentUser, db: DbSession
 ) -> MessageResponse:
@@ -108,6 +108,26 @@ def delete_oauth_client(
 
 
 # --- connect / callback -------------------------------------------------
+@router.post("/gmail/connect", response_model=ConnectResponse)
+def connect_gmail(
+    request: Request,
+    session: CurrentSession,
+    db: DbSession,
+    account_id: uuid.UUID | None = Query(default=None),
+) -> ConnectResponse:
+    return start_connect(Provider.GMAIL, request, session, db, account_id)
+
+
+@router.post("/outlook/connect", response_model=ConnectResponse)
+def connect_outlook(
+    request: Request,
+    session: CurrentSession,
+    db: DbSession,
+    account_id: uuid.UUID | None = Query(default=None),
+) -> ConnectResponse:
+    return start_connect(Provider.OUTLOOK, request, session, db, account_id)
+
+
 @router.post("/{provider}/connect", response_model=ConnectResponse)
 def start_connect(
     provider: Provider,
@@ -121,6 +141,46 @@ def start_connect(
     )
     db.commit()
     return ConnectResponse(**result)
+
+
+@router.get("/gmail/callback")
+async def gmail_callback(
+    request: Request,
+    db: DbSession,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> RedirectResponse:
+    return await oauth_callback(
+        Provider.GMAIL,
+        request,
+        db,
+        code=code,
+        state=state,
+        error=error,
+        error_description=error_description,
+    )
+
+
+@router.get("/outlook/callback")
+async def outlook_callback(
+    request: Request,
+    db: DbSession,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> RedirectResponse:
+    return await oauth_callback(
+        Provider.OUTLOOK,
+        request,
+        db,
+        code=code,
+        state=state,
+        error=error,
+        error_description=error_description,
+    )
 
 
 @router.get("/{provider}/callback")

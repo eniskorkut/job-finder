@@ -2,14 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  Check,
   ChevronDown,
-  Copy,
   ExternalLink,
-  Eye,
-  EyeOff,
-  HelpCircle,
-  Info,
   KeyRound,
   Lock,
   Mail,
@@ -18,7 +12,6 @@ import {
   Save,
   Search,
   ServerCog,
-  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -32,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Input, Select } from "@/components/ui/form";
+import { Field, Input } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -44,7 +37,6 @@ import type {
   Integration,
   IntegrationsResponse,
   MailAccount,
-  OAuthClientConfig,
 } from "@/lib/types";
 
 const providerLabels: Record<string, string> = {
@@ -85,6 +77,11 @@ export function IntegrationsView() {
       });
     } else {
       const explanations: Record<string, string> = {
+        access_denied: "Sağlayıcı yetkilendirmesi iptal edildi veya reddedildi.",
+        invalid_client: "Sunucuda tanımlı istemci kimlik bilgileri geçersiz. Lütfen sistem yöneticisine başvurun.",
+        redirect_uri_mismatch: "Yönlendirme adresi sağlayıcı ayarlarıyla uyuşmuyor. Lütfen sistem yöneticisine başvurun.",
+        not_a_test_user: "Google uygulaması test modunda ve hesabınız test kullanıcıları listesinde değil.",
+        oauth_not_configured: "Entegrasyon henüz yönetici tarafından yapılandırılmamış.",
         state_missing: "Yetkilendirme yanıtı eksik geldi; akışı yeniden başlatın.",
         session_missing: "Oturum bulunamadı; yeniden giriş yapıp tekrar deneyin.",
         forbidden: "Bu yetkilendirme başka bir oturuma ait; akışı yeniden başlatın.",
@@ -392,13 +389,19 @@ function MailProviderCard({
   onFeedback: (feedback: Feedback | null) => void;
   onRefresh: () => void;
 }) {
-  const config = integration.oauth_client;
-  const [editing, setEditing] = useState(false);
   const Icon = Mail;
+  const isGmail = integration.provider === "gmail";
+  const title = isGmail ? "GOOGLE / GMAIL" : "OUTLOOK / HOTMAIL";
+  const description = isGmail
+    ? "LinkedIn iş bildirimlerinizi ve desteklenen kariyer e-postalarını Gmail üzerinden okuyun."
+    : "Hotmail, Outlook.com ve Live posta kutunuzdaki iş bildirimlerini Microsoft Graph üzerinden okuyun.";
+  const buttonLabel = isGmail ? "Gmail Bağla" : "Outlook / Hotmail Bağla";
+  const isConfigured = integration.configured ?? false;
 
-  const hasConnectedAccount = integration.accounts.some(
+  const connectedAccounts = integration.accounts.filter(
     (a) => a.status === "connected",
   );
+  const hasConnectedAccount = connectedAccounts.length > 0;
 
   return (
     <Card className="flex flex-col" data-testid={`integration-card-${integration.provider}`}>
@@ -406,73 +409,67 @@ function MailProviderCard({
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
             <Icon aria-hidden className="size-4" strokeWidth={1.75} />
-            {integration.label}
+            {title}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge variant={statusTones[integration.status] ?? "neutral"}>
-              {connectionStatusLabels[integration.status] ?? integration.status}
+            <Badge variant={hasConnectedAccount ? "success" : isConfigured ? "neutral" : "warning"}>
+              {hasConnectedAccount ? "BAĞLI" : isConfigured ? "BAĞLI DEĞİL" : "YAPILANDIRILMAMIŞ"}
             </Badge>
-            {config?.configured ? (
-              <Badge variant="success">istemci kayıtlı</Badge>
-            ) : (
-              <Badge variant="warning">istemci bekliyor</Badge>
-            )}
-            {hasConnectedAccount ? (
-              <Badge variant="success">hesap bağlı</Badge>
-            ) : null}
+            <Badge variant="muted">Yalnızca posta okuma</Badge>
           </div>
         </div>
-        <CardDescription>{integration.description}</CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-4">
-        {config ? (
-          <SetupPanel
-            config={config}
-            editing={editing || !config.configured}
-            onEditingChange={setEditing}
-            onSaved={() => {
-              setEditing(false);
-              onFeedback({
-                tone: "success",
-                message: `${integration.label} istemci bilgileri kaydedildi.`,
-              });
-              onRefresh();
-            }}
-            onDeleted={() => {
-              onFeedback({
-                tone: "warning",
-                message: `${integration.label} istemci bilgileri silindi; hesaplar yeniden yetkilendirme bekliyor.`,
-              });
-              onRefresh();
-            }}
-            onError={(message) => onFeedback({ tone: "danger", message })}
-          />
-        ) : null}
+        {/* Security and privacy notes */}
+        <div className="rounded-[var(--radius-control)] bg-surface-muted p-3 text-[11.5px] leading-relaxed text-ink-subtle space-y-1">
+          {isGmail ? (
+            <>
+              <p>Google parolanız Job Finder ile paylaşılmaz.</p>
+              <p>Yalnızca posta okuma izni istenir.</p>
+              <p>Job Finder yalnızca iş bildirimlerini bulmak için e-posta okuma izni kullanır.</p>
+            </>
+          ) : (
+            <>
+              <p>Microsoft parolanız Job Finder ile paylaşılmaz.</p>
+              <p>Yalnızca posta okuma izni istenir.</p>
+            </>
+          )}
+        </div>
 
+        {/* Connect button */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button
             variant="secondary"
             loading={busy}
-            disabled={!config?.configured}
+            disabled={!isConfigured}
             onClick={() => onConnect()}
           >
             <Plug aria-hidden className="size-3.5" strokeWidth={2} />
-            <span>{integration.label} ile bağlan</span>
+            <span>{buttonLabel}</span>
           </Button>
-          <span className="text-[11.5px] leading-4 text-ink-subtle">
-            {config?.configured
-              ? `${integration.label} hesabınızı yetkilendirin (parola istenmez).`
-              : "Önce istemci bilgilerini kaydedin."}
-          </span>
+          {!isConfigured ? (
+            <span className="text-[11.5px] leading-4 text-warning">
+              Yönetici tarafından yapılandırılmamış.
+            </span>
+          ) : (
+            <span className="text-[11.5px] leading-4 text-ink-subtle">
+              {isGmail
+                ? "Google hesabınızı yetkilendirin (parola istenmez)."
+                : "Microsoft hesabınızı yetkilendirin (parola istenmez)."}
+            </span>
+          )}
         </div>
 
+        {/* Accounts list */}
         {integration.accounts.length ? (
           <ul className="flex flex-col gap-2">
             {integration.accounts.map((account) => (
               <AccountRow
                 key={account.id}
                 account={account}
+                providerLabel={integration.label}
                 onConnect={() => onConnect(account.id)}
                 onFeedback={onFeedback}
                 onRefresh={onRefresh}
@@ -483,7 +480,7 @@ function MailProviderCard({
           <EmptyState
             icon={Mail}
             title="Bağlı hesap yok"
-            description="İstemci bilgilerini kaydedip bağlanın. Aynı uygulamayla birden fazla posta kutusu ekleyebilirsiniz."
+            description="Hesabınızı bağlayın. Birden fazla posta kutusu ekleyebilirsiniz."
             className="py-6"
           />
         )}
@@ -493,451 +490,15 @@ function MailProviderCard({
 }
 
 // ----------------------------------------------------------------------
-function SetupPanel({
-  config,
-  editing,
-  onEditingChange,
-  onSaved,
-  onDeleted,
-  onError,
-}: {
-  config: OAuthClientConfig;
-  editing: boolean;
-  onEditingChange: (editing: boolean) => void;
-  onSaved: () => void;
-  onDeleted: () => void;
-  onError: (message: string) => void;
-}) {
-  const [showGuide, setShowGuide] = useState(!config.configured);
-  const [showFaq, setShowFaq] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
-  const [clientId, setClientId] = useState(config.client_id ?? "");
-  const [clientSecret, setClientSecret] = useState("");
-  const [tenant, setTenant] = useState(config.tenant ?? "consumers");
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [infoField, setInfoField] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    try {
-      await api.put(`/api/v1/integrations/${config.provider}/client`, {
-        client_id: clientId,
-        client_secret: clientSecret || undefined,
-        tenant: config.provider === "outlook" ? tenant : undefined,
-      });
-      setClientSecret("");
-      onSaved();
-    } catch (reason) {
-      onError(reason instanceof ApiError ? reason.message : "Kaydedilemedi.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    try {
-      await api.delete(`/api/v1/integrations/${config.provider}/client`);
-      setClientId("");
-      setClientSecret("");
-      onDeleted();
-    } catch (reason) {
-      onError(reason instanceof ApiError ? reason.message : "Silinemedi.");
-    }
-  }
-
-  async function copyRedirect() {
-    try {
-      await navigator.clipboard.writeText(config.redirect_uri);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      onError("Adres panoya kopyalanamadı.");
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3 rounded-[var(--radius-card)] bg-surface-muted p-3.5">
-      {/* GUIDE TOGGLE HEADER */}
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setShowGuide((value) => !value)}
-          className="flex flex-1 items-center justify-between text-left hover:opacity-90"
-          aria-expanded={showGuide}
-        >
-          <span className="flex items-center gap-2 text-[12.5px] font-medium text-ink">
-            <ShieldCheck aria-hidden className="size-3.5 text-accent" strokeWidth={2} />
-            <span>{config.title}</span>
-            <span className="rounded bg-surface px-1.5 py-0.5 text-[10.5px] font-normal text-ink-subtle">
-              ~{config.estimated_minutes ?? 5} dk
-            </span>
-          </span>
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              "size-4 text-ink-subtle transition-[rotate] duration-150 ease-out",
-              showGuide && "rotate-180",
-            )}
-            strokeWidth={2}
-          />
-        </button>
-      </div>
-
-      {/* SETUP WIZARD & GUIDE */}
-      {showGuide ? (
-        <div className="flex flex-col gap-3 pt-1 text-[12px] leading-5 text-ink-muted border-t border-border/40">
-          {/* Prerequisites */}
-          {config.prerequisites && config.prerequisites.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-subtle">
-              <span className="font-medium text-ink">Önkoşullar:</span>
-              {config.prerequisites.map((req, i) => (
-                <span key={i} className="rounded bg-surface px-2 py-0.5 border border-border/40">
-                  {req}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          {/* Structured Steps if available */}
-          {config.structured_steps && config.structured_steps.length > 0 ? (
-            <div className="flex flex-col gap-2.5">
-              {config.structured_steps.map((step) => {
-                const isRedirectStep =
-                  step.copyable_text !== undefined ||
-                  step.title.toLowerCase().includes("redirect uri");
-                return (
-                  <div
-                    key={step.step_number}
-                    className="flex flex-col gap-1.5 rounded-[var(--radius-control)] bg-surface p-2.5 shadow-xs"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-2 font-medium text-ink text-[12px]">
-                        <span className="flex size-5 items-center justify-center rounded-full bg-accent-soft text-[11px] font-bold text-accent-ink">
-                          {step.step_number}
-                        </span>
-                        {step.title}
-                      </span>
-                      {step.action_url ? (
-                        <a
-                          href={step.action_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline shrink-0"
-                        >
-                          <ExternalLink className="size-3" />
-                          {step.action_label || "Aç"}
-                        </a>
-                      ) : null}
-                    </div>
-
-                    <p className="text-[11.5px] leading-relaxed text-ink-subtle ps-7">
-                      {step.description}
-                    </p>
-
-                    {isRedirectStep ? (
-                      <div className="ms-7 flex flex-wrap items-center gap-2 pt-1">
-                        <code className="rounded bg-surface-muted px-2 py-1 font-mono text-[11px] text-ink select-all break-all border border-border/60">
-                          {config.redirect_uri}
-                        </code>
-                        <Button variant="ghost" size="sm" onClick={copyRedirect} className="h-6 px-2 text-[11px]">
-                          {copied ? (
-                            <Check aria-hidden className="size-3 text-success" strokeWidth={2} />
-                          ) : (
-                            <Copy aria-hidden className="size-3" strokeWidth={2} />
-                          )}
-                          {copied ? "Kopyalandı" : "Kopyala"}
-                        </Button>
-                      </div>
-                    ) : null}
-
-                    {step.warning ? (
-                      <div className="ms-7 flex items-start gap-1.5 rounded bg-warning-soft/70 px-2 py-1.5 text-[11px] text-warning leading-relaxed">
-                        <ShieldAlert className="size-3.5 shrink-0 mt-0.5" />
-                        <span>{step.warning}</span>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            /* Fallback to simple steps list */
-            <ol className="flex list-decimal flex-col gap-1 ps-4">
-              {config.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          )}
-
-          {/* Always ensure Redirect URI is visible in the guide */}
-          {(!config.structured_steps || config.structured_steps.length === 0) ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="rounded bg-surface px-2 py-1 font-mono text-[11px] text-ink border border-border/60">
-                {config.redirect_uri}
-              </code>
-              <Button variant="ghost" size="sm" onClick={copyRedirect}>
-                {copied ? (
-                  <Check aria-hidden className="size-3.5 text-success" strokeWidth={2} />
-                ) : (
-                  <Copy aria-hidden className="size-3.5" strokeWidth={2} />
-                )}
-                {copied ? "Kopyalandı" : "Kopyala"}
-              </Button>
-            </div>
-          ) : null}
-
-          <p className="text-[11.5px] text-ink-subtle">
-            İzinler: {config.scopes.join(", ")}
-          </p>
-
-          {config.notes.map((note) => (
-            <p key={note} className="text-[11.5px] text-ink-subtle">
-              {note}
-            </p>
-          ))}
-
-          {/* FAQ & TROUBLESHOOTING ACCORDION */}
-          {(config.faq && config.faq.length > 0) || (config.troubleshooting && config.troubleshooting.length > 0) ? (
-            <div className="pt-2 border-t border-border/40">
-              <button
-                type="button"
-                onClick={() => setShowFaq((v) => !v)}
-                className="flex items-center justify-between w-full text-left text-[11.5px] font-medium text-ink hover:text-accent"
-              >
-                <span className="flex items-center gap-1.5">
-                  <HelpCircle className="size-3.5 text-accent" />
-                  Sık Karşılaşılan Sorunlar ve Çözümleri (FAQ)
-                </span>
-                <ChevronDown
-                  className={cn("size-3.5 transition-transform duration-150", showFaq && "rotate-180")}
-                />
-              </button>
-
-              {showFaq ? (
-                <div className="flex flex-col gap-2 mt-2 pt-1">
-                  {config.faq?.map((item, idx) => (
-                    <div key={idx} className="flex flex-col gap-0.5 rounded bg-surface p-2 text-[11.5px] shadow-xs">
-                      <span className="font-medium text-ink flex items-center gap-1">
-                        <span className="text-accent font-bold">?</span> {item.question}
-                      </span>
-                      <span className="text-ink-subtle leading-relaxed ps-3">{item.answer}</span>
-                    </div>
-                  ))}
-
-                  {config.troubleshooting?.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex flex-col gap-0.5 rounded bg-surface p-2 text-[11.5px] border-l-2 border-warning shadow-xs"
-                    >
-                      <span className="font-medium text-ink flex items-center gap-1.5">
-                        <ShieldAlert className="size-3.5 text-warning shrink-0" />
-                        {item.title}
-                      </span>
-                      <span className="text-ink-subtle leading-relaxed ps-5">
-                        <strong>Neden:</strong> {item.cause}
-                      </span>
-                      <span className="text-ink-subtle leading-relaxed ps-5">
-                        <strong>Çözüm:</strong> {item.solution}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* CREDENTIAL ENTRY FORM */}
-      {editing ? (
-        <div className="flex flex-col gap-3 pt-2 border-t border-border/40">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[12px] font-medium text-ink">
-              OAuth 2.0 İstemci Bilgileri
-            </span>
-            <span className="text-[11px] text-ink-subtle">
-              Kendi Google Cloud / Microsoft Entra uygulamanızın kimlik bilgilerini girin.
-            </span>
-          </div>
-
-          {/* Client ID field */}
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor={`client-id-${config.provider}`}
-                className="text-[12px] font-medium text-ink"
-              >
-                Client ID
-              </label>
-              <button
-                type="button"
-                onClick={() => setInfoField(infoField === "client_id" ? null : "client_id")}
-                className="flex items-center gap-0.5 text-[11px] text-accent hover:underline"
-              >
-                <Info className="size-3" />
-                Bu nedir?
-              </button>
-            </div>
-            {infoField === "client_id" ? (
-              <p className="rounded bg-surface p-2 text-[11px] leading-relaxed text-ink-subtle border border-border/40">
-                Google Cloud veya Microsoft Entra üzerinde oluşturduğunuz Web uygulamasının herkese açık kimlik numarasıdır.
-              </p>
-            ) : null}
-            <Input
-              id={`client-id-${config.provider}`}
-              value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
-              placeholder="00000000-0000-0000-0000-000000000000"
-              autoComplete="off"
-            />
-          </div>
-
-          {/* Client Secret field with show/hide password toggle */}
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor={`client-secret-${config.provider}`}
-                className="text-[12px] font-medium text-ink"
-              >
-                {config.configured ? "Yeni Client Secret (boş = değişmez)" : "Client Secret"}
-              </label>
-              <button
-                type="button"
-                onClick={() => setInfoField(infoField === "client_secret" ? null : "client_secret")}
-                className="flex items-center gap-0.5 text-[11px] text-accent hover:underline"
-              >
-                <Info className="size-3" />
-                Bu nedir?
-              </button>
-            </div>
-            {infoField === "client_secret" ? (
-              <p className="rounded bg-surface p-2 text-[11px] leading-relaxed text-ink-subtle border border-border/40">
-                Yalnızca uygulamanız ile sunucu arasında paylaşılan gizli şifredir. Sunucumuzda AES-128-CBC ile şifrelenir ve ekrana asla açık metin olarak dönmez.
-              </p>
-            ) : null}
-            <div className="relative flex items-center">
-              <Input
-                id={`client-secret-${config.provider}`}
-                type={showSecret ? "text" : "password"}
-                value={clientSecret}
-                onChange={(event) => setClientSecret(event.target.value)}
-                placeholder={config.configured ? "•••• (kayıtlı)" : "Client secret"}
-                autoComplete="new-password"
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowSecret((v) => !v)}
-                className="absolute right-2.5 text-ink-subtle hover:text-ink focus:outline-none p-1"
-                title={showSecret ? "Gizle" : "Yazılanı göster"}
-                aria-label={showSecret ? "Gizle" : "Yazılanı göster"}
-              >
-                {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-              </button>
-            </div>
-            <span className="text-[11px] text-ink-subtle">
-              {showSecret
-                ? "Göz açık: Şu an yazdığınız secret ekranda görünür. Kaydettikten sonra şifrelenir."
-                : "Sunucuda APP_ENCRYPTION_KEY ile şifrelenir; tekrar düz metin gösterilmez."}
-            </span>
-          </div>
-
-          {/* Tenant field (Outlook only) */}
-          {config.provider === "outlook" ? (
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <label htmlFor="tenant" className="text-[12px] font-medium text-ink">
-                  Kiracı (tenant)
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setInfoField(infoField === "tenant" ? null : "tenant")}
-                  className="flex items-center gap-0.5 text-[11px] text-accent hover:underline"
-                >
-                  <Info className="size-3" />
-                  Bu nedir?
-                </button>
-              </div>
-              {infoField === "tenant" ? (
-                <p className="rounded bg-surface p-2 text-[11px] leading-relaxed text-ink-subtle border border-border/40">
-                  Kişisel Hotmail, Outlook veya Live hesapları için 'consumers' seçilmelidir. Kurumsal Office365 hesapları için 'common' veya şirketinizin kiracı ID&apos;si kullanılır.
-                </p>
-              ) : null}
-              <Select
-                id="tenant"
-                value={tenant}
-                onChange={(event) => setTenant(event.target.value)}
-              >
-                <option value="consumers">consumers (kişisel hesaplar)</option>
-                <option value="common">common (kişisel + kurumsal)</option>
-                <option value="organizations">organizations (yalnızca kurumsal)</option>
-              </Select>
-            </div>
-          ) : null}
-
-          {/* Save / Cancel buttons */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Button
-              size="sm"
-              loading={saving}
-              disabled={!clientId || (!config.configured && !clientSecret)}
-              onClick={save}
-            >
-              <Save aria-hidden className="size-3.5" strokeWidth={2} />
-              Kaydet
-            </Button>
-            {config.configured ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  onEditingChange(false);
-                  setClientSecret("");
-                }}
-              >
-                Vazgeç
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : (
-        /* CONFIGURED READ-ONLY SUMMARY */
-        <div className="flex flex-col gap-2 pt-2 border-t border-border/40">
-          <Row label="Client ID" value={config.client_id ?? "—"} mono />
-          <Row label="Client Secret" value={config.client_secret_hint ?? "—"} mono />
-          {config.provider === "outlook" ? (
-            <Row label="Kiracı" value={config.tenant ?? "consumers"} />
-          ) : null}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Button variant="ghost" size="sm" onClick={() => onEditingChange(true)}>
-              <KeyRound aria-hidden className="size-3.5" strokeWidth={2} />
-              Güncelle
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-ink-muted pointer-hover:text-danger"
-              onClick={remove}
-            >
-              <Trash2 aria-hidden className="size-3.5" strokeWidth={1.5} />
-              Bilgileri sil
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------------
 function AccountRow({
   account,
+  providerLabel,
   onConnect,
   onFeedback,
   onRefresh,
 }: {
   account: MailAccount;
+  providerLabel: string;
   onConnect: () => void;
   onFeedback: (feedback: Feedback | null) => void;
   onRefresh: () => void;
@@ -1013,15 +574,24 @@ function AccountRow({
     }
   }
 
+  const isConnected = account.status === "connected";
   const disconnected = account.status === "disconnected";
 
   return (
     <li className="flex flex-col gap-3 rounded-[var(--radius-control)] bg-surface p-3 shadow-[var(--shadow-card)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-[13px] font-medium text-ink">
-            {account.email_address}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="truncate text-[13px] font-medium text-ink">
+              {account.email_address}
+            </span>
+            <Badge variant="muted" className="text-[10px]">
+              {providerLabel}
+            </Badge>
+            <Badge variant="muted" className="text-[10px]">
+              Yalnızca posta okuma
+            </Badge>
+          </div>
           <span className="text-[11.5px] text-ink-subtle">
             {account.last_synced_at
               ? `Son tarama ${formatDateTime(account.last_synced_at)} (${formatRelative(account.last_synced_at)})`
@@ -1029,8 +599,8 @@ function AccountRow({
             {account.initial_sync_completed ? "" : " · ilk tarama sürüyor"}
           </span>
         </div>
-        <Badge variant={statusTones[account.status] ?? "neutral"}>
-          {connectionStatusLabels[account.status] ?? account.status}
+        <Badge variant={isConnected ? "success" : statusTones[account.status] ?? "neutral"}>
+          {isConnected ? "BAĞLI" : connectionStatusLabels[account.status] ?? account.status}
         </Badge>
       </div>
 
@@ -1068,11 +638,11 @@ function AccountRow({
         </Button>
         <Button variant="ghost" size="sm" loading={testing} onClick={test}>
           <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
-          Bağlantıyı test et
+          Bağlantıyı Test Et
         </Button>
         <Button variant="ghost" size="sm" onClick={onConnect}>
           <ExternalLink aria-hidden className="size-3.5" strokeWidth={1.75} />
-          {disconnected ? "Yeniden bağlan" : "Yeniden yetkilendir"}
+          {disconnected ? "Yeniden bağlan" : "Yeniden Yetkilendir"}
         </Button>
         {disconnected ? (
           <Button
@@ -1082,7 +652,7 @@ function AccountRow({
             onClick={purge}
           >
             <Trash2 aria-hidden className="size-3.5" strokeWidth={1.5} />
-            Kaydı kaldır
+            Kaydı Kaldır
           </Button>
         ) : (
           <Button
@@ -1092,7 +662,7 @@ function AccountRow({
             onClick={disconnect}
           >
             <Unplug aria-hidden className="size-3.5" strokeWidth={1.5} />
-            Bağlantıyı kes
+            Bağlantıyı Kaldır
           </Button>
         )}
       </div>

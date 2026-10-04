@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4.1-flash"
 
+    # Deployment-wide OAuth Applications (Gmail & Microsoft Graph)
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: str | None = None
+    microsoft_oauth_client_id: str | None = None
+    microsoft_oauth_client_secret: str | None = None
+    microsoft_oauth_tenant: str = "consumers"
+
     session_cookie_name: str = "jh_session"
     session_ttl_days: int = 14
     csrf_cookie_name: str = "jh_csrf"
@@ -228,6 +235,14 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
+
+    @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.google_oauth_client_id and self.google_oauth_client_secret)
+
+    @property
+    def microsoft_oauth_configured(self) -> bool:
+        return bool(self.microsoft_oauth_client_id and self.microsoft_oauth_client_secret)
 
     @property
     def llm_configured(self) -> bool:

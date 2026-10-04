@@ -127,7 +127,8 @@ class IntegrationRead(ORMModel):
     description: str
     category: str
     status: str
-    available: bool
+    configured: bool = False
+    available: bool = True
     unavailable_reason: str | None = None
     phase: str
     accounts: list[MailAccountRead] = []
@@ -135,6 +136,8 @@ class IntegrationRead(ORMModel):
     last_synced_at: datetime | None = None
     oauth_client: OAuthClientRead | None = None
     capabilities: dict = Field(default_factory=dict)
+    scopes: list[str] = Field(default_factory=list)
+    mode: str | None = None
 
 
 class IntegrationsResponse(ORMModel):

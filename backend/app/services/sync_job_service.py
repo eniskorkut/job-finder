@@ -682,7 +682,7 @@ class SyncRunner:
                         from app.services.scoring_service import ScoringService
 
                         with self.session_factory() as session:
-                            score_job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                            score_job = ScoringService(session, now=self._now).enqueue_for_new_jobs(user_id)
                             session.commit()
                         if score_job is not None:
                             logger.info(
@@ -693,7 +693,7 @@ class SyncRunner:
                     from app.services.scoring_service import ScoringService
 
                     with self.session_factory() as session:
-                        score_job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                        score_job = ScoringService(session, now=self._now).enqueue_for_new_jobs(user_id)
                         session.commit()
                     if score_job is not None:
                         logger.info(
@@ -706,7 +706,7 @@ class SyncRunner:
                     from app.services.scoring_service import ScoringService
 
                     with self.session_factory() as session:
-                        score_job = ScoringService(session).enqueue_for_new_jobs(user_id)
+                        score_job = ScoringService(session, now=self._now).enqueue_for_new_jobs(user_id)
                         session.commit()
                     if score_job is not None:
                         logger.info(

@@ -278,30 +278,49 @@ class ClientFactory:
         self,
         *,
         provider: str,
-        client_id: str,
-        client_secret: str | None,
-        redirect_uri: str | None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        redirect_uri: str | None = None,
         tenant: str | None = None,
     ) -> MailProviderClient:
         if provider == Provider.GMAIL.value:
+            cid = client_id or settings.google_oauth_client_id or ""
+            csec = (
+                client_secret
+                if client_secret is not None
+                else settings.google_oauth_client_secret
+            )
+            red = redirect_uri or settings.gmail_redirect_uri
             return self.gmail_cls(  # type: ignore[call-arg]
-                client_id=client_id,
-                client_secret=client_secret,
-                redirect_uri=redirect_uri,
+                client_id=cid,
+                client_secret=csec,
+                redirect_uri=red,
             )
         if provider == Provider.OUTLOOK.value:
+            cid = client_id or settings.microsoft_oauth_client_id or ""
+            csec = (
+                client_secret
+                if client_secret is not None
+                else settings.microsoft_oauth_client_secret
+            )
+            red = redirect_uri or settings.outlook_redirect_uri
+            tnt = tenant or settings.microsoft_oauth_tenant
             return self.outlook_cls(  # type: ignore[call-arg]
-                client_id=client_id,
-                client_secret=client_secret,
-                redirect_uri=redirect_uri,
-                tenant=tenant,
+                client_id=cid,
+                client_secret=csec,
+                redirect_uri=red,
+                tenant=tnt,
             )
         raise errors.validation_error(f"Desteklenmeyen sağlayıcı: {provider}")
 
 
 # ----------------------------------------------------------------------
 class OAuthClientService:
-    """CRUD for the user's own OAuth application credentials."""
+    """[LEGACY / DEPRECATED] CRUD for per-user OAuth application credentials.
+
+    Kept for backward compatibility with legacy client endpoints.
+    The runtime authentication and sync flows now use deployment-wide OAuth apps.
+    """
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -409,18 +428,7 @@ class OAuthClientService:
         }
 
     def client_for_account(self, account: MailAccount, user_id: uuid.UUID):
-        config = self.get_or_raise(user_id, account.provider)
-        return ClientFactory().build(
-            provider=account.provider,
-            client_id=config.client_id,
-            client_secret=(
-                decrypt_secret(config.client_secret_encrypted)
-                if config.client_secret_encrypted
-                else None
-            ),
-            redirect_uri=config.redirect_uri,
-            tenant=config.tenant,
-        )
+        return ClientFactory().build(provider=account.provider)
 
     @staticmethod
     def _validate_provider(provider: str) -> None:
@@ -463,18 +471,28 @@ class OAuthFlowService:
         login_hint: str | None = None,
     ) -> dict:
         OAuthClientService._validate_provider(provider)
-        config = self.clients.get_or_raise(user.id, provider)
-        client_secret = (
-            decrypt_secret(config.client_secret_encrypted)
-            if config.client_secret_encrypted
-            else None
-        )
+        if provider == Provider.GMAIL.value and not settings.google_oauth_configured:
+            raise errors.service_unavailable(
+                "Google / Gmail entegrasyonu sistem yöneticisi tarafından henüz yapılandırılmamış.",
+                code="oauth_not_configured",
+            )
+        if provider == Provider.OUTLOOK.value and not settings.microsoft_oauth_configured:
+            raise errors.service_unavailable(
+                "Microsoft / Outlook entegrasyonu sistem yöneticisi tarafından henüz yapılandırılmamış.",
+                code="oauth_not_configured",
+            )
 
         target_account = None
         if account_id is not None:
             target_account = self.accounts.get_by_provider(user.id, provider, account_id)
             if target_account is None:
                 raise errors.not_found("Yeniden bağlanacak hesap bulunamadı.")
+
+        redirect_uri = (
+            settings.gmail_redirect_uri
+            if provider == Provider.GMAIL.value
+            else settings.outlook_redirect_uri
+        )
 
         raw_state = generate_token(OAUTH_STATE_BYTES)
         code_verifier = generate_token(64)
@@ -490,7 +508,7 @@ class OAuthFlowService:
             provider=provider,
             state_hash=hash_token(raw_state),
             code_verifier_encrypted=encrypt_secret(code_verifier),
-            redirect_uri=config.redirect_uri,
+            redirect_uri=redirect_uri,
             session_id=session.id,
             mail_account_id=target_account.id if target_account else None,
             expires_at=datetime.now(timezone.utc) + self.state_ttl,
@@ -500,10 +518,7 @@ class OAuthFlowService:
 
         client = self.factory.build(
             provider=provider,
-            client_id=config.client_id,
-            client_secret=client_secret,
-            redirect_uri=config.redirect_uri,
-            tenant=config.tenant,
+            redirect_uri=redirect_uri,
         )
         authorization_url = client.authorization_url(
             state=raw_state,
@@ -514,7 +529,7 @@ class OAuthFlowService:
             "authorization_url": authorization_url,
             "provider": provider,
             "expires_at": state.expires_at,
-            "redirect_uri": config.redirect_uri,
+            "redirect_uri": redirect_uri,
             "account_id": str(target_account.id) if target_account else None,
         }
 
@@ -546,17 +561,43 @@ class OAuthFlowService:
         self.states.consume(state)
         self.db.flush()
 
-        if error:
-            raise errors.validation_error(f"Sağlayıcı yetkilendirmeyi reddetti: {error}")
-        if not code:
-            raise errors.validation_error("Yetkilendirme kodu gelmedi.")
+        if provider == Provider.GMAIL.value and not settings.google_oauth_configured:
+            raise errors.service_unavailable(
+                "Google / Gmail entegrasyonu sistem yöneticisi tarafından henüz yapılandırılmamış.",
+                code="oauth_not_configured",
+            )
+        if provider == Provider.OUTLOOK.value and not settings.microsoft_oauth_configured:
+            raise errors.service_unavailable(
+                "Microsoft / Outlook entegrasyonu sistem yöneticisi tarafından henüz yapılandırılmamış.",
+                code="oauth_not_configured",
+            )
 
-        config = self.clients.get_or_raise(state.user_id, provider)
-        client_secret = (
-            decrypt_secret(config.client_secret_encrypted)
-            if config.client_secret_encrypted
-            else None
-        )
+        if error:
+            err_lower = error.lower()
+            if "access_denied" in err_lower:
+                raise errors.validation_error(
+                    f"Sağlayıcı yetkilendirmeyi reddetti: {error}", code="access_denied"
+                )
+            if "invalid_client" in err_lower or "aadsts7000215" in err_lower:
+                raise errors.validation_error(
+                    f"İstemci kimlik doğrulama hatası: {error}", code="invalid_client"
+                )
+            if "redirect_uri_mismatch" in err_lower or "aadsts50011" in err_lower:
+                raise errors.validation_error(
+                    f"Yönlendirme adresi uyuşmazlığı: {error}",
+                    code="redirect_uri_mismatch",
+                )
+            if "not_a_test_user" in err_lower:
+                raise errors.validation_error(
+                    f"Test kullanıcısı tanımlı değil: {error}", code="not_a_test_user"
+                )
+            raise errors.validation_error(
+                f"Sağlayıcı yetkilendirmeyi reddetti: {error}",
+                code="access_denied" if "denied" in err_lower else "rejected",
+            )
+        if not code:
+            raise errors.validation_error("Yetkilendirme kodu gelmedi.", code="missing_code")
+
         verifier = (
             decrypt_secret(state.code_verifier_encrypted)
             if state.code_verifier_encrypted
@@ -565,10 +606,7 @@ class OAuthFlowService:
 
         client = self.factory.build(
             provider=provider,
-            client_id=config.client_id,
-            client_secret=client_secret,
-            redirect_uri=config.redirect_uri,
-            tenant=config.tenant,
+            redirect_uri=state.redirect_uri,
         )
 
         if hasattr(client, "__aenter__"):
@@ -580,6 +618,19 @@ class OAuthFlowService:
                 cache=None,
             )
             identity = await client.verify_identity(access_token=tokens.access_token)
+        except ProviderError as exc:
+            msg = str(exc)
+            msg_lower = msg.lower()
+            code_str = "provider_error"
+            if "invalid_client" in msg_lower or "aadsts7000215" in msg_lower:
+                code_str = "invalid_client"
+            elif "redirect_uri_mismatch" in msg_lower or "aadsts50011" in msg_lower:
+                code_str = "redirect_uri_mismatch"
+            elif "access_denied" in msg_lower:
+                code_str = "access_denied"
+            elif "not_a_test_user" in msg_lower:
+                code_str = "not_a_test_user"
+            raise errors.validation_error(f"Sağlayıcı hatası: {msg}", code=code_str)
         finally:
             if hasattr(client, "__aexit__"):
                 await client.__aexit__()  # type: ignore[misc]
@@ -642,18 +693,18 @@ class OAuthFlowService:
 
     # --- maintenance ---------------------------------------------------
     async def test_connection(self, user: User, account: MailAccount) -> dict:
-        config = self.clients.get_or_raise(user.id, account.provider)
-        client_secret = (
-            decrypt_secret(config.client_secret_encrypted)
-            if config.client_secret_encrypted
-            else None
-        )
+        if account.provider == Provider.GMAIL.value and not settings.google_oauth_configured:
+            raise errors.service_unavailable(
+                "Google / Gmail entegrasyonu sistem yöneticisi tarafından henüz yapılandırılmamış.",
+                code="oauth_not_configured",
+            )
+        if account.provider == Provider.OUTLOOK.value and not settings.microsoft_oauth_configured:
+            raise errors.service_unavailable(
+                "Microsoft / Outlook entegrasyonu sistem yöneticisi tarafından henüz yapılandırılmamış.",
+                code="oauth_not_configured",
+            )
         client = self.factory.build(
             provider=account.provider,
-            client_id=config.client_id,
-            client_secret=client_secret,
-            redirect_uri=config.redirect_uri,
-            tenant=config.tenant,
         )
         if hasattr(client, "__aenter__"):
             await client.__aenter__()  # type: ignore[misc]

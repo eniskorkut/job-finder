@@ -35,12 +35,13 @@ MODE_REANALYZE = "reanalyze"
 
 
 class ScoringService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, *, now: datetime | None = None) -> None:
         self.db = db
         self.jobs = JobRepository(db)
         self.job_queue = SyncJobRepository(db)
         self.cvs = CVRepository(db)
         self.preferences = PreferenceRepository(db)
+        self._now = now
 
     # --- eligibility ----------------------------------------------------
     def active_cv_checksum(self, user: User) -> str | None:
@@ -70,13 +71,14 @@ class ScoringService:
         )
         if job_id is not None:
             stmt = stmt.where(Job.id == job_id)
+        ref_now = self._now or datetime.now(timezone.utc)
         if days is not None:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+            cutoff = ref_now - timedelta(days=max(1, days))
             stmt = stmt.where(Job.discovered_at >= cutoff)
 
         if mode == MODE_NEW:
             if job_id is None and not force:
-                max_age_cutoff = datetime.now(timezone.utc) - timedelta(days=settings.job_max_age_days)
+                max_age_cutoff = ref_now - timedelta(days=settings.job_max_age_days)
                 stmt = stmt.where(
                     (Job.freshness_status != "expired"),
                     (Job.availability_status != "closed"),

@@ -81,7 +81,7 @@ class TestClientCredentials:
         save_gmail_client(api_user1)
         listing = api_user2.get("/api/v1/integrations").json()
         gmail = next(i for i in listing["integrations"] if i["provider"] == "gmail")
-        assert gmail["oauth_client"]["configured"] is False
+        assert gmail["oauth_client"] is None
 
         from app.repositories.oauth_clients import OAuthClientRepository
 
@@ -111,13 +111,20 @@ class TestClientCredentials:
         assert "kullanıcı API anahtarı gerekmez" in body["web_search"]["description"]
 
         gmail = next(i for i in body["integrations"] if i["provider"] == "gmail")
-        client = gmail["oauth_client"]
-        assert client["estimated_minutes"] == 5
-        assert len(client["structured_steps"]) >= 5
-        assert len(client["faq"]) >= 2
-        assert any("API Key" in f["question"] for f in client["faq"])
-        assert any(t["error_code"] == "redirect_uri_mismatch" for t in client["troubleshooting"])
-        assert any(l["label"] == "Google Cloud Console" for l in client["official_links"])
+        assert gmail["configured"] is True
+        assert gmail["available"] is True
+        assert gmail["mode"] == "personal_accounts"
+        assert gmail["oauth_client"] is None
+
+        from app.services.oauth_service import PROVIDER_GUIDES
+
+        guide = PROVIDER_GUIDES["gmail"]
+        assert guide["estimated_minutes"] == 5
+        assert len(guide["structured_steps"]) >= 5
+        assert len(guide["faq"]) >= 2
+        assert any("API Key" in f["question"] for f in guide["faq"])
+        assert any(t["error_code"] == "redirect_uri_mismatch" for t in guide["troubleshooting"])
+        assert any(l["label"] == "Google Cloud Console" for l in guide["official_links"])
 
     def test_saving_credentials_returns_rich_wizard_structure(self, api_user1):
         body = save_gmail_client(api_user1)

@@ -38,9 +38,14 @@ def conflict(message: str) -> AppError:
     return AppError(status.HTTP_409_CONFLICT, "conflict", message)
 
 
-def validation_error(message: str) -> AppError:
+def validation_error(
+    message: str,
+    code: str = "validation_error",
+    *,
+    extra: dict[str, Any] | None = None,
+) -> AppError:
     return AppError(
-        status.HTTP_422_UNPROCESSABLE_CONTENT, "validation_error", message
+        status.HTTP_422_UNPROCESSABLE_CONTENT, code, message, extra=extra
     )
 
 
@@ -58,3 +63,18 @@ def not_implemented(phase: str, message: str) -> AppError:
         message,
         extra={"phase": phase},
     )
+
+
+def service_unavailable(
+    message: str = "Servis şu anda kullanılamıyor.",
+    code: str = "service_unavailable",
+    *,
+    extra: dict[str, Any] | None = None,
+) -> AppError:
+    return AppError(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        code,
+        message,
+        extra=extra,
+    )
+

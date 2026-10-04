@@ -38,6 +38,7 @@ from app.models.enums import (
     CursorKind,
     ErrorClass,
     ProcessedMessageStatus,
+    Provider,
     SyncJobAccountStatus,
 )
 from app.models.mail_account import MailAccount
@@ -229,26 +230,19 @@ class MailScanService:
             }:
                 return None
 
-            from app.repositories.oauth_clients import OAuthClientRepository
-
-            config = OAuthClientRepository(db).get_for_user_provider(
-                self.user_id, account.provider
-            )
-            if config is None:
+            if account.provider == Provider.GMAIL.value and not settings.google_oauth_configured:
                 raise ProviderAuthError(
-                    "E-posta istemci bilgileri bulunamadı.", provider=account.provider
+                    "Google / Gmail istemci bilgileri sistemde yapılandırılmamış.",
+                    provider=account.provider,
+                )
+            if account.provider == Provider.OUTLOOK.value and not settings.microsoft_oauth_configured:
+                raise ProviderAuthError(
+                    "Microsoft / Outlook istemci bilgileri sistemde yapılandırılmamış.",
+                    provider=account.provider,
                 )
 
             client = self.factory.build(
                 provider=account.provider,
-                client_id=config.client_id,
-                client_secret=(
-                    decrypt_secret(config.client_secret_encrypted)
-                    if config.client_secret_encrypted
-                    else None
-                ),
-                redirect_uri=config.redirect_uri,
-                tenant=config.tenant,
             )
             self._client_instance = client
 
@@ -502,7 +496,7 @@ class MailScanService:
 
         with self._db() as db:
             try:
-                result = JobIngestService(db).ingest_message(
+                result = JobIngestService(db, now=self._origin).ingest_message(
                     user_id=self.user_id,
                     account=account,
                     message=message,

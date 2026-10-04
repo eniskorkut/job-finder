@@ -183,7 +183,7 @@ def test_two_user_pipeline_end_to_end(db, user1, user2, fake_providers):
     from app.services.scoring_service import ScoringService
 
     for user in (user1, user2):
-        ScoringService(db).enqueue_for_new_jobs(user.id)
+        ScoringService(db, now=WINDOW_NOW).enqueue_for_new_jobs(user.id)
     db.commit()
 
     processed = drain_queue(runner)
@@ -270,7 +270,7 @@ def test_two_user_isolation_after_the_pipeline(db, user1, user2, api_user1, api_
     from app.services.scoring_service import ScoringService
 
     for user in (user1, user2):
-        ScoringService(db).enqueue_for_new_jobs(user.id)
+        ScoringService(db, now=WINDOW_NOW).enqueue_for_new_jobs(user.id)
     db.commit()
     drain_queue(runner)
 

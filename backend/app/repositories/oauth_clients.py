@@ -9,6 +9,10 @@ from app.repositories.base import Repository
 
 
 class OAuthClientRepository(Repository[OAuthClientConfig]):
+    """[LEGACY / DEPRECATED] Repository for per-user OAuth application credentials.
+
+    Kept for backward compatibility. The runtime flow now uses deployment-wide OAuth apps.
+    """
     model = OAuthClientConfig
 
     def get_for_user_provider(

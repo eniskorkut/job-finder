@@ -51,9 +51,10 @@ class IngestResult:
 
 
 class JobIngestService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, *, now: datetime | None = None) -> None:
         self.db = db
         self.sources = JobSourceRepository(db)
+        self._now = now
 
     def ingest_message(
         self,
@@ -124,7 +125,7 @@ class JobIngestService:
         if is_linkedin_url(candidate.url) or candidate.external_id:
             linkedin_url = normalize_linkedin_job_url(candidate.url, candidate.external_id)
 
-        now = datetime.now(timezone.utc)
+        now = self._now or datetime.now(timezone.utc)
         email_received_at = _aware(message.received_at) if message else now
         date_eval = evaluate_posted_at(
             email_received_at=email_received_at,

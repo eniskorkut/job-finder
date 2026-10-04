@@ -292,6 +292,7 @@ export interface Integration {
   description: string;
   category: string;
   status: string;
+  configured?: boolean;
   available: boolean;
   unavailable_reason: string | null;
   phase: string;
@@ -300,6 +301,8 @@ export interface Integration {
   last_synced_at: string | null;
   oauth_client: OAuthClientConfig | null;
   capabilities: Record<string, unknown>;
+  scopes?: string[];
+  mode?: string | null;
 }
 
 export interface IntegrationsResponse {

@@ -9,11 +9,12 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class OAuthClientConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A user's own OAuth application credentials for one provider.
+    """[LEGACY / DEPRECATED] Per-user OAuth application credentials table.
 
-    Every user registers their own Google / Microsoft Entra application, so the
-    client id and secret are per user and stored encrypted. A single config can
-    authorize several mailboxes.
+    Retained for backward compatibility and non-destructive migrations.
+    The runtime integration flow now uses deployment-wide Google and Microsoft
+    OAuth applications configured via environment variables.
+    Do not use this table for new authentication or sync flows.
     """
 
     __tablename__ = "oauth_client_configs"

@@ -4,37 +4,29 @@ import { describe, expect, it, vi } from "vitest";
 
 import { IntegrationsView } from "@/components/app/integrations-view";
 
-const redirectUris = {
-  gmail: "http://localhost:8000/api/v1/integrations/gmail/callback",
-  outlook: "http://localhost:8000/api/v1/integrations/outlook/callback",
-};
-
-function integration(provider: "gmail" | "outlook", overrides: Record<string, unknown> = {}) {
+function integration(
+  provider: "gmail" | "outlook",
+  overrides: Record<string, unknown> = {},
+) {
   return {
     provider,
     label: provider === "gmail" ? "Gmail" : "Hotmail / Outlook",
-    description: `${provider} açıklaması`,
+    description:
+      provider === "gmail"
+        ? "LinkedIn iş bildirimlerinizi ve desteklenen kariyer e-postalarını Gmail üzerinden okuyun."
+        : "Hotmail, Outlook.com ve Live posta kutunuzdaki iş bildirimlerini Microsoft Graph üzerinden okuyun.",
     category: "mail",
     status: "disconnected",
+    configured: true,
     available: true,
     unavailable_reason: null,
     phase: "phase-2",
+    mode: "personal_accounts",
+    scopes: provider === "gmail" ? ["https://www.googleapis.com/auth/gmail.readonly"] : ["Mail.Read"],
     accounts: [],
     detail: null,
     last_synced_at: null,
-    oauth_client: {
-      provider,
-      configured: false,
-      client_id: null,
-      client_secret_hint: null,
-      tenant: provider === "outlook" ? "consumers" : null,
-      redirect_uri: redirectUris[provider],
-      scopes: provider === "gmail" ? ["https://www.googleapis.com/auth/gmail.readonly"] : ["Mail.Read"],
-      title: provider === "gmail" ? "Google Cloud - OAuth Web uygulaması" : "Microsoft Entra - Web uygulaması",
-      steps: ["Adım bir", "Adım iki"],
-      notes: ["Not bir"],
-      updated_at: null,
-    },
+    oauth_client: null,
     capabilities: { first_scan_window_days: 7, first_scan_max_messages: 100 },
     ...overrides,
   };
@@ -51,6 +43,7 @@ function payload(overrides: Record<string, unknown> = {}) {
         description: "Telegram bildirimi",
         category: "notification",
         status: "disconnected",
+        configured: false,
         available: true,
         unavailable_reason: null,
         phase: "phase-3",
@@ -135,10 +128,9 @@ describe("IntegrationsView", () => {
   it("shows per-provider setup state without any secret input for DeepSeek", async () => {
     renderWith();
 
-    expect(await screen.findByText("Gmail")).toBeInTheDocument();
-    expect(screen.getByText("Hotmail / Outlook")).toBeInTheDocument();
+    expect(await screen.findByText("GOOGLE / GMAIL")).toBeInTheDocument();
+    expect(screen.getByText("OUTLOOK / HOTMAIL")).toBeInTheDocument();
     expect(screen.getByText("Telegram")).toBeInTheDocument();
-    // real per-user card: setup form instead of a phase-3 placeholder
     expect(screen.getByText("kişiye özel")).toBeInTheDocument();
     expect(screen.getByLabelText("Bot token")).toBeInTheDocument();
     expect(screen.getByText("yapılandırıldı")).toBeInTheDocument();
@@ -151,70 +143,56 @@ describe("IntegrationsView", () => {
     expect(screen.getAllByText(/backend\/.env.local/).length).toBeGreaterThan(0);
   });
 
-  it("shows the provider guide with the exact redirect URI", async () => {
+  it("shows system oauth cards with connect buttons and security notes without client forms", async () => {
     renderWith();
-    const card = within(await screen.findByTestId("integration-card-gmail"));
-    expect(card.getByText(redirectUris.gmail)).toBeInTheDocument();
-    expect(card.getAllByText("Adım bir").length).toBeGreaterThan(0);
+    const gmailCard = within(await screen.findByTestId("integration-card-gmail"));
+    expect(gmailCard.getByRole("button", { name: "Gmail Bağla" })).toBeInTheDocument();
+    expect(
+      gmailCard.getByText("Google parolanız Job Finder ile paylaşılmaz."),
+    ).toBeInTheDocument();
+    expect(
+      gmailCard.getByText("Job Finder yalnızca iş bildirimlerini bulmak için e-posta okuma izni kullanır."),
+    ).toBeInTheDocument();
+    expect(gmailCard.getByText("Yalnızca posta okuma")).toBeInTheDocument();
+
+    const outlookCard = within(screen.getByTestId("integration-card-outlook"));
+    expect(outlookCard.getByRole("button", { name: "Outlook / Hotmail Bağla" })).toBeInTheDocument();
+    expect(
+      outlookCard.getByText("Microsoft parolanız Job Finder ile paylaşılmaz."),
+    ).toBeInTheDocument();
+
+    // No client ID or client secret form inputs exist anywhere in mail cards
+    expect(gmailCard.queryByLabelText(/client id/i)).not.toBeInTheDocument();
+    expect(gmailCard.queryByLabelText(/client secret/i)).not.toBeInTheDocument();
+    expect(outlookCard.queryByLabelText(/client id/i)).not.toBeInTheDocument();
+    expect(outlookCard.queryByLabelText(/client secret/i)).not.toBeInTheDocument();
   });
 
-  it("saves client credentials", async () => {
-    const user = userEvent.setup();
-    const fetchMock = renderWith();
-
-    const card = within(await screen.findByTestId("integration-card-gmail"));
-    await user.type(card.getByLabelText("Client ID"), "1234567890-abc.apps.googleusercontent.com");
-    await user.type(card.getByLabelText("Client Secret"), "super-secret-value");
-    await user.click(card.getByRole("button", { name: /^Kaydet$/ }));
-
-    await waitFor(() => {
-      const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
-      expect(put).toBeTruthy();
-      const body = JSON.parse(String(put?.[1]?.body));
-      expect(body.client_id).toBe("1234567890-abc.apps.googleusercontent.com");
-      expect(body.client_secret).toBe("super-secret-value");
-    });
-  });
-
-  it("shows the stored secret masked, never in clear text", async () => {
+  it("disables connect button and shows explanation when provider is not configured", async () => {
     renderWith({
-      gmail: {
-        oauth_client: {
-          ...integration("gmail").oauth_client,
-          configured: true,
-          client_id: "1234567890-abc.apps.googleusercontent.com",
-          client_secret_hint: "******************alue",
-        },
-      },
+      gmail: { configured: false, available: false },
     });
+
     const card = within(await screen.findByTestId("integration-card-gmail"));
-    expect(await card.findByText("******************alue")).toBeInTheDocument();
-    expect(card.getByRole("button", { name: /Güncelle/ })).toBeInTheDocument();
+    const btn = card.getByRole("button", { name: "Gmail Bağla" });
+    expect(btn).toBeDisabled();
+    expect(card.getByText("Yönetici tarafından yapılandırılmamış.")).toBeInTheDocument();
   });
 
   it("connects through the provider authorization url", async () => {
     const user = userEvent.setup();
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });
-    const fetchMock = renderWith({
-      gmail: {
-        oauth_client: {
-          ...integration("gmail").oauth_client,
-          configured: true,
-          client_id: "1234567890-abc.apps.googleusercontent.com",
-          client_secret_hint: "********alue",
-        },
-      },
-    });
+    const fetchMock = renderWith();
 
     await screen.findByTestId("integration-card-gmail");
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (init?.method === "POST" && String(url).includes("/connect")) {
+      if (init?.method === "POST" && String(url).includes("/gmail/connect")) {
         return Promise.resolve(
           jsonResponse({
             provider: "gmail",
             authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
-            redirect_uri: redirectUris.gmail,
+            redirect_uri: "http://localhost:8000/api/v1/integrations/gmail/callback",
             expires_at: "2026-09-27T11:00:00Z",
             account_id: null,
           }),
@@ -223,27 +201,67 @@ describe("IntegrationsView", () => {
       return Promise.resolve(jsonResponse(payload()));
     });
 
-    const card = within(await screen.findByTestId("integration-card-gmail"));
-    await user.click(card.getByRole("button", { name: /ile bağlan/ }));
+    const card = within(screen.getByTestId("integration-card-gmail"));
+    await user.click(card.getByRole("button", { name: "Gmail Bağla" }));
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith(
-      "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
-    ));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(
+        "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
+      ),
+    );
   });
 
-  it("explains a failed oauth callback from the url", async () => {
+  it("explains failed oauth callback reasons from the url", async () => {
     window.history.replaceState(
       {},
       "",
-      "/integrations?oauth=error&reason=forbidden&provider=gmail",
+      "/integrations?oauth=error&reason=access_denied&provider=gmail",
     );
     renderWith();
 
     expect(
-      await screen.findByText(/başka bir oturuma ait/i),
+      await screen.findByText(/yetkilendirmesi iptal edildi veya reddedildi/i),
     ).toBeInTheDocument();
-    // The query string is cleaned up so a refresh does not repeat the message.
     expect(window.location.search).toBe("");
+  });
+
+  it("explains invalid_client callback error from url", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/integrations?oauth=error&reason=invalid_client&provider=outlook",
+    );
+    renderWith();
+
+    expect(
+      await screen.findByText(/istemci kimlik bilgileri geçersiz/i),
+    ).toBeInTheDocument();
+  });
+
+  it("explains redirect_uri_mismatch callback error from url", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/integrations?oauth=error&reason=redirect_uri_mismatch&provider=gmail",
+    );
+    renderWith();
+
+    expect(
+      await screen.findByText(/yönlendirme adresi sağlayıcı ayarlarıyla uyuşmuyor/i),
+    ).toBeInTheDocument();
+  });
+
+  it("explains not_a_test_user callback error from url", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/integrations?oauth=error&reason=not_a_test_user&provider=gmail",
+    );
+    renderWith();
+
+    expect(
+      await screen.findByText(/hesabınız test kullanıcıları listesinde değil/i),
+    ).toBeInTheDocument();
   });
 
   it("renders a linked account with filters and never shows tokens", async () => {
@@ -251,6 +269,7 @@ describe("IntegrationsView", () => {
 
     const card = within(await screen.findByTestId("integration-card-gmail"));
     expect(await card.findByText("ai.hunter@gmail.com")).toBeInTheDocument();
+    expect(card.getAllByText("BAĞLI").length).toBeGreaterThan(0);
     expect(card.getByDisplayValue("linkedin.com")).toBeInTheDocument();
     expect(card.getByDisplayValue("iş ilanı")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/access-token|refresh-token|client-secret-value/);
@@ -299,40 +318,24 @@ describe("IntegrationsView", () => {
     });
 
     const card = within(await screen.findByTestId("integration-card-gmail"));
-    await user.click(card.getByRole("button", { name: /Bağlantıyı test et/ }));
+    await user.click(card.getByRole("button", { name: /Bağlantıyı Test Et/ }));
     expect(
       await screen.findByText(/hesabı yeniden bağlayın/i),
     ).toBeInTheDocument();
   });
 
-  it("surfaces the backend message when client credentials are rejected", async () => {
+  it("disconnects linked account", async () => {
     const user = userEvent.setup();
-    const fetchMock = renderWith();
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (init?.method === "PUT") {
-        return Promise.resolve(
-          jsonResponse(
-            {
-              detail: {
-                code: "validation_error",
-                message: "İlk kayıtta Client Secret zorunludur.",
-              },
-            },
-            422,
-          ),
-        );
-      }
-      return Promise.resolve(jsonResponse(payload()));
-    });
+    const fetchMock = renderWith({ gmail: { accounts: [account] } });
 
     const card = within(await screen.findByTestId("integration-card-gmail"));
-    await user.type(card.getByLabelText("Client ID"), "abc.apps.googleusercontent.com");
-    await user.type(card.getByLabelText("Client Secret"), "x");
-    await user.click(card.getByRole("button", { name: /^Kaydet$/ }));
+    await user.click(card.getByRole("button", { name: /Bağlantıyı Kaldır/ }));
 
-    expect(
-      await screen.findByText("İlk kayıtta Client Secret zorunludur."),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      const del = fetchMock.mock.calls.find(([, init]) => init?.method === "DELETE");
+      expect(del).toBeTruthy();
+      expect(String(del?.[0])).toContain(`/accounts/${account.id}`);
+    });
   });
 
   it("renders the security banner with expandable details", async () => {
@@ -369,38 +372,5 @@ describe("IntegrationsView", () => {
     expect(screen.getByText("Sunucu Tarafından Yönetilen Servisler")).toBeInTheDocument();
     expect(screen.getAllByText("sunucu tarafından yönetilir").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("SearXNG Web Araması (İş Keşfi & Zenginleştirme)")).toBeInTheDocument();
-  });
-
-  it("toggles client secret visibility with the eye icon", async () => {
-    const user = userEvent.setup();
-    renderWith();
-
-    const card = within(await screen.findByTestId("integration-card-gmail"));
-    const secretInput = card.getByLabelText("Client Secret");
-    expect(secretInput).toHaveAttribute("type", "password");
-
-    const toggleButton = card.getByRole("button", { name: /Yazılanı göster/i });
-    await user.click(toggleButton);
-
-    expect(secretInput).toHaveAttribute("type", "text");
-
-    const hideButton = card.getByRole("button", { name: /Gizle/i });
-    await user.click(hideButton);
-
-    expect(secretInput).toHaveAttribute("type", "password");
-  });
-
-  it("toggles 'Bu nedir?' explanation popover", async () => {
-    const user = userEvent.setup();
-    renderWith();
-
-    const card = within(await screen.findByTestId("integration-card-gmail"));
-    const infoButtons = card.getAllByRole("button", { name: /Bu nedir\?/i });
-    expect(infoButtons.length).toBeGreaterThan(0);
-
-    await user.click(infoButtons[0]);
-    expect(
-      await card.findByText(/oluşturduğunuz Web uygulamasının/i),
-    ).toBeInTheDocument();
   });
 });

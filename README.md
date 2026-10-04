@@ -343,56 +343,75 @@ npm run build             # üretim derlemesi
 
 Ayrıntılı sonuçlar için aşağıdaki **Aşama 1 raporu** bölümüne bakın.
 
-## Gmail bağlantısı (kullanıcı kendi OAuth uygulamasını kurar)
+## Gmail OAuth — administrator setup
 
-Her kullanıcı **kendi** Google OAuth istemcisini panele girip kendi Gmail hesabını bağlar.
-Paylaşılan bir Google uygulaması yoktur; client secret kullanıcı bazında `APP_ENCRYPTION_KEY`
-ile şifrelenerek saklanır ve bir daha düz metin gösterilmez.
+Job Finder, tüm kullanıcılar için tek bir sistem düzeyinde Google OAuth 2.0 Web Uygulaması kullanır. Son kullanıcılar artık Client ID veya Client Secret girmez; arayüzde yalnızca **Gmail Bağla** düğmesine tıklayarak hesaplarını yetkilendirirler.
 
-1. <https://console.cloud.google.com> üzerinde bir proje açın.
-2. **APIs & Services → Library → Gmail API → Enable**.
-3. **OAuth consent screen**: External; test aşamasında *Test users* listesine bağlayacağınız
-   Gmail adresini ekleyin. Scope: `https://www.googleapis.com/auth/gmail.readonly`
-   (+ `openid`, `email` hesap adını doğrulamak için).
-4. **Credentials → Create credentials → OAuth client ID → Web application**.
-5. **Authorized redirect URIs** alanına birebir şunu ekleyin:
-   `http://localhost:8000/api/v1/integrations/gmail/callback`
-6. Client ID ve Client Secret değerlerini **Entegrasyonlar** sayfasındaki forma kaydedin,
-   ardından **Gmail ile bağlan** düğmesine basın.
+### 1) Google Cloud Console Yapılandırması
+1. <https://console.cloud.google.com> adresine gidin ve bir proje seçin (veya yeni bir proje oluşturun).
+2. **APIs & Services → Library** bölümünden **Gmail API**'yi bulun ve etkinleştirin (**Enable**).
+3. **OAuth consent screen**:
+   - Kullanıcı türünü **External** olarak seçin.
+   - Uygulama adı, kullanıcı desteği e-postası gibi temel alanları doldurun.
+   - **Scopes** adımında: `https://www.googleapis.com/auth/gmail.readonly`, `openid`, `email` kapsamlarını ekleyin.
+   - Uygulama *Testing* modundayken, *Test users* listesine sistemi kullanacak Gmail adreslerini ekleyin.
+4. **Credentials → Create Credentials → OAuth client ID**:
+   - Application type: **Web application**.
+   - Name: `Job Finder Web Client`.
+   - **Authorized redirect URIs**:
+     - Yerel geliştirme için: `http://localhost:8000/api/v1/integrations/gmail/callback`
+     - Canlı / özel alan adı için: `<API_BASE_URL>/api/v1/integrations/gmail/callback` (backend `GMAIL_REDIRECT_URI` ortam değişkeniyle dinamik olarak yapılandırılabilir).
 
-Notlar:
+### 2) Ortam Değişkenleri (`backend/.env.local`)
+Oluşturulan kimlik bilgilerini `backend/.env.local` dosyasına ekleyin:
+```ini
+GOOGLE_OAUTH_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-google-client-secret
+# İsteğe bağlı: varsayılan http://localhost:8000/api/v1/integrations/gmail/callback
+# GMAIL_REDIRECT_URI=https://api.example.com/api/v1/integrations/gmail/callback
+```
 
-- Uygulama *Testing* modundayken Google refresh token'ı **7 gün** sonra geçersiz olur;
-  hesabı "Yeniden yetkilendir" ile tazeleyin (arayüz bunu `needs_reauth` olarak gösterir).
-- Yalnızca okuma izni istenir; **e-posta parolası hiçbir zaman istenmez ve saklanmaz**.
-- `localhost` ile `127.0.0.1` karıştırılmamalıdır: uygulamanın adresi
-  `http://localhost:3000`, callback adresi `http://localhost:8000/...` olmalıdır. Çerez
-  alan adı `localhost` için yazıldığından callback sırasında oturum taşınır.
-- Aynı istemci bilgileriyle **birden fazla Gmail hesabı** eklenebilir (hesap başına ayrı kart,
-  ayrı filtre ve ayrı tarama checkpoint'i).
+### 3) Güvenlik ve Token İzolasyonu
+- Client Secret yalnızca sunucu ortam değişkeninde tutulur; istemciye veya API yanıtlarına asla sızdırılmaz.
+- Kullanıcıların Google erişim ve yenileme belirteçleri `APP_ENCRYPTION_KEY` ile AES-128-CBC şifrelenerek veritabanında saklanır.
+- Her kullanıcının posta kutusu ve taranan ilanları tamamen izoledir.
+- Google parolanız Job Finder ile paylaşılmaz; Job Finder yalnızca iş bildirimlerini bulmak için salt okuma (`gmail.readonly`) izni kullanır.
 
-## Hotmail / Outlook bağlantısı (Microsoft Entra)
+## Microsoft OAuth — administrator setup
 
-1. <https://entra.microsoft.com> → **Entra ID → App registrations → New registration**.
-2. **Supported account types**: kişisel Microsoft hesapları dahil olan seçenek
-   (*Accounts in any organizational directory and personal Microsoft accounts*).
-3. **Authentication → Add a platform → Web** ve redirect URI olarak birebir:
-   `http://localhost:8000/api/v1/integrations/outlook/callback`
-4. **Certificates & secrets → New client secret**; değeri forma girin
-   (kiracı alanı kişisel hesaplar için `consumers`).
-5. **API permissions → Microsoft Graph → Delegated**: `Mail.Read`, `User.Read`
-   (`offline_access` otomatik eklenir).
+Job Finder, Hotmail, Outlook.com ve Live hesaplarını Microsoft Graph API üzerinden okumak için tek bir deployment-wide Microsoft Entra ID (Azure AD) çok kiracılı web uygulaması kullanır. Son kullanıcılar yalnızca **Outlook / Hotmail Bağla** butonuna tıklarlar.
 
-Notlar:
+### 1) Microsoft Entra Admin Center Yapılandırması
+1. <https://entra.microsoft.com> adresine gidin.
+2. **Entra ID → Applications → App registrations → + New registration**.
+3. **Supported account types**:
+   - **MUTLAKA** `Accounts in any organizational directory and personal Microsoft accounts` (Kişisel Microsoft hesapları dahil seçeneği) işaretlenmelidir. Kişisel Hotmail/Outlook/Live hesapları için bu seçenek zorunludur.
+4. **Redirect URI**:
+   - Platform: **Web**.
+   - URI: `http://localhost:8000/api/v1/integrations/outlook/callback` (veya canlıda `<API_BASE_URL>/api/v1/integrations/outlook/callback`).
+5. **Certificates & secrets → + New client secret**:
+   - Açıklama girip süreyi seçin.
+   - **ÖNEMLİ**: Oluşturulduktan sonra tablodaki **Value** (Değer) kolonunu kopyalayın (*Secret ID* değil!).
+6. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**:
+   - `Mail.Read`
+   - `User.Read`
+   - (`offline_access` izni otomatik olarak dahil edilir).
 
-- MSAL **confidential client** akışı kullanılır: gizli anahtar uygulamayı doğruladığı için
-  PKCE gerekmez (MSAL bu istemci türünde desteklemez); state + oturum eşleşmesi ile CSRF
-  korunur.
-- Token yenileme MSAL'in şifrelenmiş token cache'i üzerinden `acquire_token_silent` ile yapılır;
-  cache de `APP_ENCRYPTION_KEY` ile şifreli saklanır.
-- Artımlı tarama `deltaLink` ile yapılır; geçersiz delta bağlantısında (410/404) iş
-  kullanıcıya hata göstermek yerine sınırlı yeniden tarama yapar ve checkpoint'i yeniler.
-- Client secret süresi dolduğunda aynı formdan yeni secret girip yeniden bağlanın.
+### 2) Ortam Değişkenleri (`backend/.env.local`)
+Oluşturulan kimlik bilgilerini `backend/.env.local` dosyasına ekleyin:
+```ini
+MICROSOFT_OAUTH_CLIENT_ID=your-microsoft-application-id
+MICROSOFT_OAUTH_CLIENT_SECRET=your-microsoft-client-secret-value
+MICROSOFT_OAUTH_TENANT=consumers
+# İsteğe bağlı: varsayılan http://localhost:8000/api/v1/integrations/outlook/callback
+# OUTLOOK_REDIRECT_URI=https://api.example.com/api/v1/integrations/outlook/callback
+```
+
+### 3) Kiracı Otoritesi ve Kimlik Rotasyonu
+- **Tenant Authority**: Kişisel `@outlook.com`, `@hotmail.com`, `@live.com` hesapları `consumers` kiracısı ile yetkilendirilir (`https://login.microsoftonline.com/consumers`). Kurumsal hesaplar için `common` veya kuruluş Tenant ID'si kullanılabilir.
+- **Dinamik Callback / Redirect URI**: `OUTLOOK_REDIRECT_URI` ortam değişkeniyle yönlendirme adresi ortam bazında özelleştirilebilir.
+- **MSAL Token Cache İzolasyonu**: Kullanıcı oturum açtığında MSAL serialize token önbelleği oluşturulur ve `APP_ENCRYPTION_KEY` ile şifrelenerek ilgili kullanıcının `mail_accounts` satırında saklanır. Kullanıcılar birbirlerinin belirteçlerini veya e-postalarını göremez.
+- **Kimlik Bilgisi Rotasyonu (Credential Rotation)**: Microsoft Client Secret süresi dolduğunda veya değiştirildiğinde yalnızca `backend/.env.local` dosyasındaki `MICROSOFT_OAUTH_CLIENT_SECRET` güncellenip backend yeniden başlatılır. Kullanıcıların veritabanındaki hesapları korunur; gerektiğinde kullanıcılar tek tıkla "Yeniden Yetkilendir" butonuna basarak bağlantılarını yenileyebilirler.
 
 ## Ortak LLM (DeepSeek / OpenAI-uyumlu)
 

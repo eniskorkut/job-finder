@@ -22,12 +22,16 @@ def test_notification_test_requires_a_configured_bot(api_user1):
     assert "Telegram" in response.json()["detail"]["message"]
 
 
-def test_connect_requires_saved_client_credentials(api_user1):
-    """No credentials stored yet: the API explains what to do instead of 501."""
+def test_connect_requires_system_oauth_configuration(api_user1, monkeypatch):
+    """When deployment OAuth is not configured, connect explains the missing setup."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "google_oauth_client_id", None)
+    monkeypatch.setattr(settings, "microsoft_oauth_client_id", None)
     for provider in ("gmail", "outlook"):
         response = api_user1.post(f"/api/v1/integrations/{provider}/connect")
-        assert response.status_code == 422
-        assert "istemci bilgileri" in response.json()["detail"]["message"]
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "oauth_not_configured"
 
 
 def test_integrations_report_phase2_availability(api_user1, monkeypatch):
@@ -40,8 +44,9 @@ def test_integrations_report_phase2_availability(api_user1, monkeypatch):
         item = providers[provider]
         assert item["available"] is True
         assert item["phase"] == "phase-2"
-        assert item["oauth_client"]["configured"] is False
-        assert item["oauth_client"]["redirect_uri"].endswith(f"/{provider}/callback")
+        assert item["configured"] is True
+        assert item["oauth_client"] is None
+        assert item["mode"] == "personal_accounts"
         assert item["capabilities"]["first_scan_window_days"] >= 1
 
     # Phase 3 replaced the phase-2 telegram stub with a real per-user

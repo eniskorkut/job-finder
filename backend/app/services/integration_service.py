@@ -73,13 +73,20 @@ class IntegrationService:
             provider_accounts = [a for a in accounts if a.provider == provider]
             client_cls = PROVIDER_CLIENTS[provider]
             capabilities = client_cls.capabilities
-            client_view = self._client_view(user, provider)
+
+            configured = (
+                settings.google_oauth_configured
+                if provider == Provider.GMAIL.value
+                else settings.microsoft_oauth_configured
+            )
+            available = configured
+            unavailable_reason = (
+                None if configured else "Yönetici tarafından yapılandırılmamış."
+            )
 
             status = ConnectionStatus.DISCONNECTED.value
             if provider_accounts:
                 status = _aggregate_status(provider_accounts)
-            elif client_view is None or not client_view.configured:
-                status = ConnectionStatus.DISCONNECTED.value
 
             items.append(
                 IntegrationRead(
@@ -88,16 +95,19 @@ class IntegrationService:
                     description=description,
                     category="mail",
                     status=status,
-                    available=True,
-                    unavailable_reason=None,
+                    configured=configured,
+                    available=available,
+                    unavailable_reason=unavailable_reason,
                     phase=phase,
+                    mode="personal_accounts",
+                    scopes=list(capabilities.scopes),
                     accounts=[
                         MailAccountRead.model_validate(account)
                         for account in provider_accounts
                     ],
                     detail=description,
                     last_synced_at=_latest(provider_accounts),
-                    oauth_client=client_view,
+                    oauth_client=None,
                     capabilities={
                         "implemented": capabilities.implemented,
                         "supports_multiple_accounts": capabilities.supports_multiple_accounts,

@@ -18,6 +18,11 @@ os.environ["COOKIE_SECURE"] = "false"
 os.environ["LOGIN_RATE_LIMIT_ATTEMPTS"] = "5"
 os.environ["LOGIN_RATE_LIMIT_WINDOW_SECONDS"] = "900"
 os.environ["DEEPSEEK_API_KEY"] = ""
+os.environ["GOOGLE_OAUTH_CLIENT_ID"] = "test-google-client-id.apps.googleusercontent.com"
+os.environ["GOOGLE_OAUTH_CLIENT_SECRET"] = "test-google-client-secret"
+os.environ["MICROSOFT_OAUTH_CLIENT_ID"] = "test-microsoft-client-id"
+os.environ["MICROSOFT_OAUTH_CLIENT_SECRET"] = "test-microsoft-client-secret"
+os.environ["MICROSOFT_OAUTH_TENANT"] = "consumers"
 
 import pytest  # noqa: E402
 from dataclasses import dataclass  # noqa: E402

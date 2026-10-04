@@ -43,6 +43,30 @@ export function TabIntegrations({
 
   // Email / OAuth integration states
   const [integrationsData, setIntegrationsData] = useState<IntegrationsResponse | null>(null);
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+
+  const handleConnectMail = async (provider: "gmail" | "outlook") => {
+    setConnectingProvider(provider);
+    try {
+      const res = await api.post<{ authorization_url: string }>(
+        `/api/v1/integrations/${provider}/connect`
+      );
+      if (res?.authorization_url) {
+        window.location.assign(res.authorization_url);
+      } else {
+        onShowToast("Yetkilendirme bağlantısı alınamadı.");
+        setConnectingProvider(null);
+      }
+    } catch {
+      onShowToast("Bağlantı başlatılamadı. Sistem yapılandırmasını kontrol edin.");
+      setConnectingProvider(null);
+    }
+  };
+
+  const gmailIntegration = integrationsData?.integrations.find((i) => i.provider === "gmail");
+  const outlookIntegration = integrationsData?.integrations.find((i) => i.provider === "outlook");
+  const isGmailConfigured = gmailIntegration?.configured ?? false;
+  const isOutlookConfigured = outlookIntegration?.configured ?? false;
 
   const storageKey = `job_hunter_custom_sites:${user?.id || "anon"}`;
 
@@ -390,38 +414,61 @@ export function TabIntegrations({
           {/* Gmail */}
           <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-white uppercase">Google / Gmail</span>
+              <span className="font-bold text-white uppercase">GOOGLE / GMAIL</span>
               <span className="text-[10px] text-white/50">Resmi Google OAuth</span>
             </div>
             <p className="text-white/60 text-[11px] font-sans">
-              Google Workspace veya kişisel Gmail hesabınızdaki LinkedIn iş bildirimlerini tarar.
+              LinkedIn iş bildirimlerinizi ve desteklenen kariyer e-postalarını Gmail üzerinden okuyun.
             </p>
+            <div className="space-y-1 text-[10px] text-white/40 font-sans">
+              <p>Google parolanız Job Finder ile paylaşılmaz.</p>
+              <p>Yalnızca posta okuma izni istenir.</p>
+              <p>Job Finder yalnızca iş bildirimlerini bulmak için e-posta okuma izni kullanır.</p>
+            </div>
             <div className="pt-2">
-              <a
-                href="/api/v1/oauth/google/start"
-                className="silver-btn lux-press inline-block px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider text-white"
+              <button
+                type="button"
+                onClick={() => handleConnectMail("gmail")}
+                disabled={!isGmailConfigured || connectingProvider === "gmail"}
+                className="silver-btn lux-press inline-block px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Gmail Hesabını Yetkilendir
-              </a>
+                {connectingProvider === "gmail" ? "Yönlendiriliyor..." : "Gmail Bağla"}
+              </button>
+              {!isGmailConfigured && (
+                <p className="text-[10px] text-amber-400 mt-1.5 font-sans">
+                  Yönetici tarafından yapılandırılmamış.
+                </p>
+              )}
             </div>
           </div>
 
           {/* Microsoft Outlook */}
           <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3 font-mono text-xs">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-white uppercase">Microsoft Outlook</span>
+              <span className="font-bold text-white uppercase">OUTLOOK / HOTMAIL</span>
               <span className="text-[10px] text-white/50">Microsoft Graph OAuth</span>
             </div>
             <p className="text-white/60 text-[11px] font-sans">
-              Outlook / Hotmail posta kutusundaki kariyer uyarılarını güvenli Graph Delta ile çeker.
+              Hotmail, Outlook.com ve Live posta kutunuzdaki iş bildirimlerini Microsoft Graph üzerinden okuyun.
             </p>
+            <div className="space-y-1 text-[10px] text-white/40 font-sans">
+              <p>Microsoft parolanız Job Finder ile paylaşılmaz.</p>
+              <p>Yalnızca posta okuma izni istenir.</p>
+            </div>
             <div className="pt-2">
-              <a
-                href="/api/v1/oauth/microsoft/start"
-                className="silver-btn lux-press inline-block px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider text-white"
+              <button
+                type="button"
+                onClick={() => handleConnectMail("outlook")}
+                disabled={!isOutlookConfigured || connectingProvider === "outlook"}
+                className="silver-btn lux-press inline-block px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Outlook Hesabını Yetkilendir
-              </a>
+                {connectingProvider === "outlook" ? "Yönlendiriliyor..." : "Outlook / Hotmail Bağla"}
+              </button>
+              {!isOutlookConfigured && (
+                <p className="text-[10px] text-amber-400 mt-1.5 font-sans">
+                  Yönetici tarafından yapılandırılmamış.
+                </p>
+              )}
             </div>
           </div>
         </div>
